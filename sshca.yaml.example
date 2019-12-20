@@ -13,11 +13,12 @@
 # Log signed certificates here
 #signed_log: /var/log/sshca/signed.log
 
+# Profile definitions. Defaults are shown commented out.
 profiles:
   admin:
     principals:
       - admin
-    validity: 52w
+    #validity: 52w
     options:
       - permit-agent-forwarding
       - permit-port-forwarding
@@ -27,3 +28,17 @@ profiles:
     principals:
       - borgbackup
     validity: 260w
+    generate_key:
+      #type: ed25519
+      filename: /path/to/sshkey
+
+      # There is also support for template filenames
+      #
+      # $i: certificate identity
+      #
+      # Example:
+      #
+      #   filename: /path/to/$i
+
+      # Create missing directories in filename path
+      #create_dirs: false

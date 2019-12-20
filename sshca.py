@@ -2,15 +2,13 @@
 
 import logging
 import argparse
-import os
-import grp
 import random
-import tempfile
 import sys
 import subprocess
 import re
+import os
 from string import Template
-from datetime import timedelta, datetime
+from datetime import timedelta
 from pathlib import Path
 
 import yaml
@@ -22,7 +20,7 @@ LOGGER = logging.getLogger()
 class SSHCA:
     def __init__(self, signing_key, signed_log):
         self.signing_key = Path(signing_key)
-        self.signed_log=signed_log
+        self.signed_log = signed_log
 
     @staticmethod
     def _to_timedelta(value):
@@ -45,17 +43,17 @@ class SSHCA:
         '''
         19 digits seems to be the maximum serial length in signed SSH keys
         '''
-        return random.randint(1,10**length)
+        return random.randint(1, 10**length)
 
-    def _log_signed(self, fingerprint, identity, serial, principals, validity):
-        timestamp = datetime.now()
+    @staticmethod
+    def certinfo(cert):
+        cmd = ['ssh-keygen', '-Lf', cert]
+        p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
+        return p.stdout
+
+    def _log_signed(self, signed_cert):
         with open(self.signed_log, 'a') as f:
-            f.write('%s | %s | %s | %s | %s | %s\n' % (timestamp,
-                                                       fingerprint,
-                                                       identity,
-                                                       serial,
-                                                       ','.join(principals),
-                                                       validity))
+            f.write('%s\n%s\n' % (self.certinfo(signed_cert).strip(), '-' * 3))
 
     def _sign_key(self, public_key, identity, principals, validity, options, serial):
         validity_seconds = int(self._to_timedelta(validity).total_seconds())
@@ -69,9 +67,7 @@ class SSHCA:
             '-O', 'clear',
         ]
 
-        for in_option in options:
-            s = Template(in_option)
-            option = s.substitute(i=identity)
+        for option in options:
             cmd.extend(['-O', option])
 
         cmd.append(str(public_key))
@@ -79,28 +75,31 @@ class SSHCA:
         subprocess.run(cmd, check=True)
         return public_key.parent / ('%s-cert.pub' % public_key.stem)
 
-    def sign_key(self, public_key, identity, principals, validity='1y', options=None):
+    def sign_key(self, public_key, identity, principals, validity=None, options=None):
         if options is None:
             options = []
 
+        if validity is None:
+            validity = '1y'
+
         serial = self._serial()
-        signed_key = self._sign_key(Path(public_key), identity, principals,
-                                    validity, options, serial)
-        fp = self._get_fingerprint(signed_key)
-        self._log_signed(fp, identity, serial, principals, validity)
+        signed_key = self._sign_key(public_key, identity, principals, validity,
+                                    options, serial)
+        self._log_signed(signed_key)
         return signed_key
 
-    @staticmethod
-    def _get_fingerprint(cert):
-        cmd = ['ssh-keygen', '-lf', cert]
-        p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
-        return p.stdout
 
+def generate_key(key_file, key_type=None):
+    if key_type is None:
+        key_type = 'ed25519'
 
-def certinfo(cert):
-    cmd = ['ssh-keygen', '-Lf', cert]
-    p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
-    return p.stdout
+    cmd = [
+        'ssh-keygen',
+        '-t', key_type,
+        '-f', str(key_file),
+    ]
+    subprocess.run(cmd, check=True)
+    return key_file.with_suffix('.pub')
 
 def main():
     parser = argparse.ArgumentParser()
@@ -108,7 +107,7 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-p', '--profile', required=True)
     parser.add_argument('-i', '--identity', required=True)
-    parser.add_argument('-k', '--public-key', required=True)
+    parser.add_argument('-k', '--public-key')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
@@ -117,9 +116,11 @@ def main():
     log = config.get('log', '/var/log/sshca/sshca.log')
     signed_log = config.get('signed_log', '/var/log/sshca/signed.log')
     signing_key = config.get('signing_key', '/etc/sshca/ca')
-    principals = config['profiles'][args.profile]['principals']
-    validity = config['profiles'][args.profile]['validity']
-    options = config['profiles'][args.profile].get('options', [])
+    profile = config['profiles'][args.profile]
+    principals = profile['principals']
+    validity = profile.get('validity', None)
+    options = profile.get('options', None)
+    key_config = profile.get('generate_key', None)
 
     if args.verbose:
         log_level = 'DEBUG'
@@ -132,10 +133,26 @@ def main():
     service_log.setFormatter(formatter)
     LOGGER.addHandler(service_log)
 
+    if key_config:
+        templ = Template(key_config['filename'])
+        filename = Path(templ.substitute(i=args.identity))
+
+        if key_config.get('create_dirs', False):
+            filename.parent.mkdir(parents=True, exist_ok=True)
+
+        public_key = generate_key(filename, key_config.get('type', None))
+    else:
+        if not args.public_key:
+            print('error: You must specify the public key (-k/--public-key)')
+            return os.EX_USAGE
+
+        public_key = Path(args.public_key)
+
     ca = SSHCA(signing_key, signed_log)
-    signed_key = ca.sign_key(args.public_key, args.identity, principals,
-                             validity, options)
-    print(certinfo(signed_key))
+    print("Signing '%s' using '%s'..." % (public_key, signing_key))
+    ca.sign_key(public_key, args.identity, principals, validity, options)
+
+    return os.EX_OK
 
 if __name__ == '__main__':
     sys.exit(main())
