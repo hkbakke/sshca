@@ -11,8 +11,8 @@ See [sshca.yaml.example](src/sshca.yaml.example)
 # Usage
 Example where you get the public key for signing
 
-    sshca -p admin -i "John Doe" -k /path/to/key.pub
+    sshca sign -p admin -i "John Doe" -k /path/to/key.pub
 
 Example where profile contains the `generate_key` option to also handle key generation
 
-    sshca -p borgbackup -i "client.example.com"
+    sshca sign -p borgbackup -i "client.example.com"

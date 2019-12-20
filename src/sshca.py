@@ -105,9 +105,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', default='/etc/sshca/sshca.yaml')
     parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument('-p', '--profile', required=True)
-    parser.add_argument('-i', '--identity', required=True)
-    parser.add_argument('-k', '--public-key')
+    subparsers = parser.add_subparsers(title='subcommands', dest='subcommand')
+    sign_parser = subparsers.add_parser('sign', help='sign public keys')
+    sign_parser.add_argument('-p', '--profile', required=True)
+    sign_parser.add_argument('-i', '--identity', required=True)
+    sign_parser.add_argument('-k', '--public-key')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
