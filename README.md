@@ -7,7 +7,7 @@
     chmod 755 /usr/local/bin/sshca
 
 # Configuration
-See·[sshca.yaml.example](src/sshca.yaml.example)
+See [sshca.yaml.example](src/sshca.yaml.example)
 
 # Usage
 Example where you get the public key for signing
