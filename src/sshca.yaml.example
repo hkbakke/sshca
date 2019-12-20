@@ -13,6 +13,9 @@
 # Log signed certificates here
 #signed_log: /var/log/sshca/signed.log
 
+# Revoked keys file
+#revoked_keys: /var/lib/sshca/revoked_keys
+
 # Profile definitions. Defaults are shown commented out.
 profiles:
   admin:

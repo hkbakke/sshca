@@ -88,6 +88,9 @@ class SSHCA:
         self._log_signed(signed_key)
         return signed_key
 
+    def revoke_key(self, public_key):
+        pass
+
 
 def generate_key(key_file, key_type=None):
     if key_type is None:
@@ -101,21 +104,10 @@ def generate_key(key_file, key_type=None):
     subprocess.run(cmd, check=True)
     return key_file.with_suffix('.pub')
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', default='/etc/sshca/sshca.yaml')
-    parser.add_argument('-v', '--verbose', action='store_true')
-    subparsers = parser.add_subparsers(title='subcommands', dest='subcommand')
-    sign_parser = subparsers.add_parser('sign', help='sign public keys')
-    sign_parser.add_argument('-p', '--profile', required=True)
-    sign_parser.add_argument('-i', '--identity', required=True)
-    sign_parser.add_argument('-k', '--public-key')
-    args = parser.parse_args()
+def revoke_subcommand(args, config):
+    pass
 
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
-
-    log = config.get('log', '/var/log/sshca/sshca.log')
+def sign_subcommand(args, config):
     signed_log = config.get('signed_log', '/var/log/sshca/signed.log')
     signing_key = config.get('signing_key', '/etc/sshca/ca')
     profile = config['profiles'][args.profile]
@@ -123,17 +115,6 @@ def main():
     validity = profile.get('validity', None)
     options = profile.get('options', None)
     key_config = profile.get('generate_key', None)
-
-    if args.verbose:
-        log_level = 'DEBUG'
-    else:
-        log_level = 'INFO'
-
-    LOGGER.setLevel(log_level)
-    service_log = logging.FileHandler(log)
-    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-    service_log.setFormatter(formatter)
-    LOGGER.addHandler(service_log)
 
     if key_config:
         templ = Template(key_config['filename'])
@@ -153,8 +134,39 @@ def main():
     ca = SSHCA(signing_key, signed_log)
     print("Signing '%s' using '%s'..." % (public_key, signing_key))
     ca.sign_key(public_key, args.identity, principals, validity, options)
-
     return os.EX_OK
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', default='/etc/sshca/sshca.yaml')
+    parser.add_argument('-v', '--verbose', action='store_true')
+    subparsers = parser.add_subparsers(title='subcommands', dest='subcommand')
+    sign_parser = subparsers.add_parser('sign', help='sign public key')
+    sign_parser.add_argument('-p', '--profile', required=True)
+    sign_parser.add_argument('-i', '--identity', required=True)
+    sign_parser.add_argument('-k', '--public-key')
+    sign_parser.set_defaults(func=sign_subcommand)
+    revoke_parser = subparsers.add_parser('revoke', help='revoke public key')
+    revoke_parser.add_argument('-k', '--public-key')
+    revoke_parser.set_defaults(func=revoke_subcommand)
+    args = parser.parse_args()
+
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    if args.verbose:
+        log_level = 'DEBUG'
+    else:
+        log_level = 'INFO'
+
+    LOGGER.setLevel(log_level)
+    log = config.get('log', '/var/log/sshca/sshca.log')
+    service_log = logging.FileHandler(log)
+    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+    service_log.setFormatter(formatter)
+    LOGGER.addHandler(service_log)
+
+    return args.func(args, config)
 
 if __name__ == '__main__':
     sys.exit(main())
