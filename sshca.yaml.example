@@ -1,0 +1,29 @@
+#
+# SSHSIGN EXAMPLE CONFIG
+#
+#  Configure and place in `/etc/sshca/sshca.yaml`
+#
+
+# Ensure this key is protected!
+#signing_key: /etc/sshca/ca
+
+# Log file
+#log: /var/log/sshca/sshca.log
+
+# Log signed certificates here
+#signed_log: /var/log/sshca/signed.log
+
+profiles:
+  admin:
+    principals:
+      - admin
+    validity: 52w
+    options:
+      - permit-agent-forwarding
+      - permit-port-forwarding
+      - permit-pty
+      - permit-X11-forwarding
+  borgbackup:
+    principals:
+      - borgbackup
+    validity: 260w
