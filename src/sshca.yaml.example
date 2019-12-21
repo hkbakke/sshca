@@ -16,6 +16,9 @@
 # Revoked keys file
 #revoked_keys: /var/lib/sshca/revoked_keys
 
+# Archive for signed certs
+#archive: /var/lib/sshca/archive
+
 # Profile definitions. Defaults are shown commented out.
 profiles:
   admin:
