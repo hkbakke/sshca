@@ -19,9 +19,8 @@ LOGGER = logging.getLogger()
 
 
 class SSHCA:
-    def __init__(self, signing_key, signed_log, revoked_keys, archive):
+    def __init__(self, signing_key, revoked_keys, archive):
         self.signing_key = Path(signing_key)
-        self.signed_log = Path(signed_log)
         self.revoked_keys = Path(revoked_keys)
         self.archive = Path(archive)
 
@@ -53,10 +52,6 @@ class SSHCA:
         cmd = ['ssh-keygen', '-Lf', cert]
         p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
         return p.stdout
-
-    def _log_signed(self, signed_cert):
-        with open(self.signed_log, 'a') as f:
-            f.write('%s\n%s\n' % (self.certinfo(signed_cert).strip(), '-' * 3))
 
     def _archive(self, signed_cert, identity, serial, host):
         if host:
@@ -110,7 +105,6 @@ class SSHCA:
                                     options=options,
                                     serial=serial)
         self._archive(signed_key, identity, serial, host)
-        self._log_signed(signed_key)
         return signed_key
 
     def revoke_key(self, public_key):
@@ -129,19 +123,13 @@ class SSHCA:
 
 
 class SSHKey:
-    def __init__(self, private_key=None, public_key=None, certificate=None):
-        if not any([private_key, public_key, certificate]):
-            raise ValueError('At least one of the key files must be set')
-
+    def __init__(self, public_key, private_key=None, certificate=None):
+        self.public_key = public_key
         self._private_key = None
-        self._public_key = None
         self._certificate = None
 
         if private_key:
             self.private_key = private_key
-
-        if public_key:
-            self.public_key = public_key
 
         if certificate:
             self.certificate = certificate
@@ -217,7 +205,7 @@ def sign_subcommand(args, ca, config):
             print('error: You must specify a public key (-k/--public-key)')
             return os.EX_USAGE
 
-        key = SSHKey(public_key=Path(args.public_key))
+        key = SSHKey(public_key=args.public_key)
 
     print("Signing '%s' using '%s'..." % (key.public_key, ca.signing_key))
     ca.sign_key(public_key=key.public_key,
@@ -226,6 +214,7 @@ def sign_subcommand(args, ca, config):
                 validity=validity,
                 options=options,
                 host=host_key)
+
     return os.EX_OK
 
 def main():
@@ -258,11 +247,10 @@ def main():
     service_log.setFormatter(formatter)
     LOGGER.addHandler(service_log)
 
-    signed_log = config.get('signed_log', '/var/log/sshca/signed.log')
     signing_key = config.get('signing_key', '/etc/sshca/ca')
     revoked_keys = config.get('revoked_keys', '/var/lib/sshca/revoked_keys')
     archive = config.get('archive', '/var/lib/sshca/archive')
-    ca = SSHCA(signing_key, signed_log, revoked_keys, archive)
+    ca = SSHCA(signing_key, revoked_keys, archive)
 
     return args.func(args, ca, config)
 

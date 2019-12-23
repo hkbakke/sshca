@@ -10,9 +10,6 @@
 # Log file
 #log: /var/log/sshca/sshca.log
 
-# Log signed certificates here
-#signed_log: /var/log/sshca/signed.log
-
 # Revoked keys file
 #revoked_keys: /var/lib/sshca/revoked_keys
 
