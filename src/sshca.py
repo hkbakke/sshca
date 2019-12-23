@@ -6,10 +6,8 @@ import random
 import sys
 import shutil
 import subprocess
-import re
 import os
 from string import Template
-from datetime import timedelta
 from pathlib import Path
 
 import yaml
@@ -23,22 +21,6 @@ class SSHCA:
         self.signing_key = Path(signing_key)
         self.revoked_keys = Path(revoked_keys)
         self.archive = Path(archive)
-
-    @staticmethod
-    def _to_timedelta(value):
-        qualifiers = {
-            's': 1,
-            'm': 60,
-            'h': 3600,
-            'd': 86400,
-            'w': 604800,
-        }
-        intervals = re.findall(r'\d+\D', value)
-        seconds = 0
-        for i in intervals:
-            number, qualifier = re.search(r'(\d+)(\D)', i).groups()
-            seconds += int(number) * qualifiers[qualifier.lower()]
-        return timedelta(seconds=seconds)
 
     @staticmethod
     def _serial(length=12):
@@ -64,14 +46,17 @@ class SSHCA:
         shutil.copy(signed_cert, archived_cert)
 
     def _sign_key(self, public_key, identity, principals, validity, host, options, serial):
-        validity_seconds = int(self._to_timedelta(validity).total_seconds())
         cmd = [
             'ssh-keygen',
             '-s', str(self.signing_key),
             '-I', identity,
-            '-V', '+%ds' % validity_seconds,
             '-z', str(serial),
         ]
+
+        if validity is not None:
+            cmd.extend([
+                '-V', validity,
+            ])
 
         if host:
             cmd.append('-h')
@@ -92,9 +77,6 @@ class SSHCA:
     def sign_key(self, public_key, identity, principals, validity=None, host=False, options=None):
         if options is None:
             options = []
-
-        if validity is None:
-            validity = '52w'
 
         serial = self._serial()
         signed_key = self._sign_key(public_key=public_key,

@@ -21,7 +21,7 @@ profiles:
   admin:
     principals:
       - admin
-    #validity: 52w
+    validity: +52w
     options:
       - permit-agent-forwarding
       - permit-port-forwarding
@@ -31,7 +31,7 @@ profiles:
   borgbackup:
     principals:
       - borgbackup
-    validity: 260w
+    validity: +260w
     generate_key:
       #type: ed25519
       filename: /path/to/sshkey
@@ -59,7 +59,7 @@ profiles:
   # sshca as of now ensures no principals are added.
   host:
     host: true
-    #validity: 52w
+    validity: +52w
     generate_key:
       type: ed25519
       filename: /path/to/hostkey
