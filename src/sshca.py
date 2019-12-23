@@ -89,7 +89,7 @@ class SSHCA:
             options = []
 
         if validity is None:
-            validity = '1y'
+            validity = '52w'
 
         serial = self._serial()
         signed_key = self._sign_key(public_key, identity, principals, validity,
