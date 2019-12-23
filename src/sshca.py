@@ -58,33 +58,43 @@ class SSHCA:
         with open(self.signed_log, 'a') as f:
             f.write('%s\n%s\n' % (self.certinfo(signed_cert).strip(), '-' * 3))
 
-    def _archive(self, signed_cert, identity, serial):
-        identity_dir = self.archive / identity
-        identity_dir.mkdir(exist_ok=True)
+    def _archive(self, signed_cert, identity, serial, host):
+        if host:
+            identity_dir = self.archive / 'host' / identity
+        else:
+            identity_dir = self.archive / 'user' / identity
+
+        identity_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         archived_cert = identity_dir / Path('%s-cert.pub' % serial)
         shutil.copy(signed_cert, archived_cert)
 
-    def _sign_key(self, public_key, identity, principals, validity, options, serial):
+    def _sign_key(self, public_key, identity, principals, validity, host, options, serial):
         validity_seconds = int(self._to_timedelta(validity).total_seconds())
         cmd = [
             'ssh-keygen',
             '-s', str(self.signing_key),
             '-I', identity,
-            '-n', ','.join(principals),
             '-V', '+%ds' % validity_seconds,
             '-z', str(serial),
-            '-O', 'clear',
         ]
 
-        for option in options:
-            cmd.extend(['-O', option])
+        if host:
+            cmd.append('-h')
+        else:
+            cmd.extend([
+                '-n', ','.join(principals),
+                '-O', 'clear',
+            ])
+
+            for option in options:
+                cmd.extend(['-O', option])
 
         cmd.append(str(public_key))
         LOGGER.debug('Command used for signing: %s', ' '.join(cmd))
         subprocess.run(cmd, check=True)
         return public_key.parent / ('%s-cert.pub' % public_key.stem)
 
-    def sign_key(self, public_key, identity, principals, validity=None, options=None):
+    def sign_key(self, public_key, identity, principals, validity=None, host=False, options=None):
         if options is None:
             options = []
 
@@ -92,9 +102,14 @@ class SSHCA:
             validity = '52w'
 
         serial = self._serial()
-        signed_key = self._sign_key(public_key, identity, principals, validity,
-                                    options, serial)
-        self._archive(signed_key, identity, serial)
+        signed_key = self._sign_key(public_key=public_key,
+                                    identity=identity,
+                                    principals=principals,
+                                    validity=validity,
+                                    host=host,
+                                    options=options,
+                                    serial=serial)
+        self._archive(signed_key, identity, serial, host)
         self._log_signed(signed_key)
         return signed_key
 
@@ -134,10 +149,15 @@ def revoke_subcommand(args, ca, config):
 
 def sign_subcommand(args, ca, config):
     profile = config['profiles'][args.profile]
-    principals = profile['principals']
     validity = profile.get('validity', None)
-    options = profile.get('options', None)
     key_config = profile.get('generate_key', None)
+    host_key = profile.get('host', False)
+    principals = []
+    options = []
+
+    if not host_key:
+        principals = profile['principals']
+        options = profile.get('options', None)
 
     if key_config:
         templ = Template(key_config['filename'])
@@ -155,7 +175,12 @@ def sign_subcommand(args, ca, config):
         public_key = Path(args.public_key)
 
     print("Signing '%s' using '%s'..." % (public_key, ca.signing_key))
-    ca.sign_key(public_key, args.identity, principals, validity, options)
+    ca.sign_key(public_key=public_key,
+                identity=args.identity,
+                principals=principals,
+                validity=validity,
+                options=options,
+                host=host_key)
     return os.EX_OK
 
 def main():

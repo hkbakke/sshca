@@ -30,6 +30,7 @@ profiles:
       - permit-port-forwarding
       - permit-pty
       - permit-X11-forwarding
+
   borgbackup:
     principals:
       - borgbackup
@@ -48,3 +49,21 @@ profiles:
 
       # Create missing directories in filename path
       #create_dirs: false
+
+  # Principals and options are ignored for host certificates. Principals are
+  # not added by default by ssh-keygen when generating host keys, but may be
+  # added to ensure the public key is only concidered known when connecting to
+  # the host using a principal name.
+  # However, you must cover all possible ways to connect to the host
+  # for it to not give warnings, including connections using one of the host's
+  # IPv4 or IPv6 addresses, which may or may not be static, or connections
+  # using the short name instead of the FQDN. As one of the main purposes of
+  # using signed host keys is to not desensitize the user of these warnings,
+  # sshca as of now ensures no principals are added.
+  host:
+    host: true
+    #validity: 52w
+    generate_key:
+      type: ed25519
+      filename: /path/to/hostkey
+      create_dirs: true
