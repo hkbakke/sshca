@@ -127,6 +127,50 @@ class SSHCA:
         cmd.append(public_key)
         subprocess.run(cmd, check=True)
 
+
+class SSHKey:
+    def __init__(self, private_key=None, public_key=None, certificate=None):
+        if not any([private_key, public_key, certificate]):
+            raise ValueError('At least one of the key files must be set')
+
+        self._private_key = None
+        self._public_key = None
+        self._certificate = None
+
+        if private_key:
+            self.private_key = private_key
+
+        if public_key:
+            self.public_key = public_key
+
+        if certificate:
+            self.certificate = certificate
+
+    @property
+    def private_key(self):
+        return self._private_key
+
+    @private_key.setter
+    def private_key(self, filename):
+        self._private_key = Path(filename)
+
+    @property
+    def public_key(self):
+        return self._public_key
+
+    @public_key.setter
+    def public_key(self, filename):
+        self._public_key = Path(filename)
+
+    @property
+    def certificate(self):
+        return self._certificate
+
+    @certificate.setter
+    def certificate(self, filename):
+        self._certificate = Path(filename)
+
+
 def generate_key(key_file, key_type=None):
     if key_type is None:
         key_type = 'ed25519'
@@ -137,7 +181,8 @@ def generate_key(key_file, key_type=None):
         '-f', str(key_file),
     ]
     subprocess.run(cmd, check=True)
-    return key_file.with_suffix('.pub')
+    key = SSHKey(private_key=key_file, public_key=key_file.with_suffix('.pub'))
+    return key
 
 def revoke_subcommand(args, ca, config):
     if not args.public_key:
@@ -166,16 +211,16 @@ def sign_subcommand(args, ca, config):
         if key_config.get('create_dirs', False):
             filename.parent.mkdir(parents=True, exist_ok=True)
 
-        public_key = generate_key(filename, key_config.get('type', None))
+        key = generate_key(filename, key_config.get('type', None))
     else:
         if not args.public_key:
             print('error: You must specify a public key (-k/--public-key)')
             return os.EX_USAGE
 
-        public_key = Path(args.public_key)
+        key = SSHKey(public_key=Path(args.public_key))
 
-    print("Signing '%s' using '%s'..." % (public_key, ca.signing_key))
-    ca.sign_key(public_key=public_key,
+    print("Signing '%s' using '%s'..." % (key.public_key, ca.signing_key))
+    ca.sign_key(public_key=key.public_key,
                 identity=args.identity,
                 principals=principals,
                 validity=validity,
