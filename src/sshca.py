@@ -213,19 +213,19 @@ def revoke_subcommand(args, config):
         return os.EX_USAGE
 
     ssh_key = SSHKey(public_key=args.public_key)
-    signing_key = config.get('signing_key', None)
-    revoked_keys = config.get('revoked_keys', None)
+    signing_key = config.get('signing_key')
+    revoked_keys = config.get('revoked_keys')
     ca = SSHCA(signing_key, revoked_keys)
     ca.revoke_key(ssh_key)
     return os.EX_OK
 
 def sign_subcommand(args, config):
     profile = config['profiles'][args.profile]
-    validity = profile.get('validity', None)
-    key_config = profile.get('generate_key', None)
+    validity = profile.get('validity')
+    key_config = profile.get('generate_key')
     host_key = profile.get('host_key', False)
-    principals = profile.get('principals', None)
-    options = profile.get('options', None)
+    principals = profile.get('principals')
+    options = profile.get('options')
 
     if key_config:
         templ = Template(key_config['filename'])
@@ -235,8 +235,8 @@ def sign_subcommand(args, config):
             filename.parent.mkdir(parents=True, exist_ok=True)
 
         ssh_key = generate_key(filename,
-                               key_config.get('type', None),
-                               key_config.get('bits', None))
+                               key_config.get('type'),
+                               key_config.get('bits'))
     else:
         if not args.public_key:
             print('error: You must specify a public key (-k/--public-key)')
@@ -244,7 +244,7 @@ def sign_subcommand(args, config):
 
         ssh_key = SSHKey(public_key=args.public_key)
 
-    signing_key = config.get('signing_key', None)
+    signing_key = config.get('signing_key')
     ca = SSHCA(signing_key)
     print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.signing_key))
     ssh_key_signed = ca.sign_key(ssh_key=ssh_key,
@@ -254,7 +254,7 @@ def sign_subcommand(args, config):
                                  options=options,
                                  host_key=host_key)
 
-    archive = config.get('archive', None)
+    archive = config.get('archive')
     cert_archive = CertArchive(archive)
     cert_archive.add(ssh_key_signed)
     print(ssh_key.certinfo())
