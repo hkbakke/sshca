@@ -6,7 +6,7 @@ import random
 import sys
 import shutil
 import subprocess
-import os
+import tempfile
 from string import Template
 from pathlib import Path
 
@@ -90,7 +90,7 @@ class SSHCA:
         cmd.append(str(ssh_key.public_key))
         LOGGER.debug('Command used for signing: %s', ' '.join(cmd))
         subprocess.run(cmd, check=True)
-        ssh_key.certificate = ssh_key.public_key.parent / Path('%s-cert.pub' % ssh_key.public_key.stem)
+        ssh_key.certificate = '%s-cert.pub' % ssh_key.public_key.with_suffix('')
         ssh_key.identity = identity
         ssh_key.serial = serial
         ssh_key.validity = validity
@@ -162,6 +162,21 @@ class SSHKey:
         p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
         return p.stdout
 
+    def move(self, dst, private_key=True, public_key=True, certificate=True):
+        if private_key and self._private_key is not None:
+            shutil.move(self._private_key, dst)
+            self.private_key = dst
+
+        if public_key and self._public_key is not None:
+            dst_public_key = dst.with_suffix('.pub')
+            shutil.move(self._public_key, dst_public_key)
+            self.public_key = dst_public_key
+
+        if certificate and self._certificate is not None:
+            dst_certificate = '%s-cert.pub' % dst
+            shutil.move(self._certificate, dst_certificate)
+            self.certificate = dst_certificate
+
 
 class CertArchive:
     def __init__(self, archive=None):
@@ -210,14 +225,14 @@ def generate_key(filename, key_type=None, bits=None):
 def revoke_subcommand(args, config):
     if not args.public_key:
         print('error: You must specify a public key or KRL specification file (-k/--public-key)')
-        return os.EX_USAGE
+        return 2
 
     ssh_key = SSHKey(public_key=args.public_key)
     ca_key = config.get('ca_key')
     revoked_keys = config.get('revoked_keys')
     ca = SSHCA(ca_key, revoked_keys)
     ca.revoke_key(ssh_key)
-    return os.EX_OK
+    return 0
 
 def sign_subcommand(args, config):
     profile = config['profiles'][args.profile]
@@ -227,38 +242,56 @@ def sign_subcommand(args, config):
     principals = profile.get('principals')
     options = profile.get('options')
 
-    if key_config:
-        templ = Template(key_config['filename'])
-        filename = Path(templ.substitute(i=args.identity))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if key_config:
+            private_key_tmp = Path(tmpdir) / 'key'
+            ssh_key = generate_key(private_key_tmp,
+                                   key_config.get('type'),
+                                   key_config.get('bits'))
+        else:
+            if not args.public_key:
+                print('error: You must specify a public key (-k/--public-key)')
+                return 2
 
-        if key_config.get('create_dirs', False):
-            filename.parent.mkdir(parents=True, exist_ok=True)
+            public_key_tmp = Path(tmpdir) / 'key.pub'
+            # This copy is only needed because ssh-keygen outputs the
+            # certificate in the same directory as the public key.
+            shutil.copy(args.public_key, public_key_tmp)
+            ssh_key = SSHKey(public_key=public_key_tmp)
 
-        ssh_key = generate_key(filename,
-                               key_config.get('type'),
-                               key_config.get('bits'))
-    else:
-        if not args.public_key:
-            print('error: You must specify a public key (-k/--public-key)')
-            return os.EX_USAGE
+        ca_key = config.get('ca_key')
+        ca = SSHCA(ca_key)
+        print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.ca_key))
+        ssh_key_signed = ca.sign_key(ssh_key=ssh_key,
+                                     identity=args.identity,
+                                     principals=principals,
+                                     validity=validity,
+                                     options=options,
+                                     host_key=host_key)
 
-        ssh_key = SSHKey(public_key=args.public_key)
+        archive = config.get('archive')
+        cert_archive = CertArchive(archive)
+        cert_archive.add(ssh_key_signed)
 
-    ca_key = config.get('ca_key')
-    ca = SSHCA(ca_key)
-    print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.ca_key))
-    ssh_key_signed = ca.sign_key(ssh_key=ssh_key,
-                                 identity=args.identity,
-                                 principals=principals,
-                                 validity=validity,
-                                 options=options,
-                                 host_key=host_key)
+        # Move to final destination after the certificate is archived to
+        # ensure no certificate is issued without we having a copy of the
+        # certificate for revokation purposes.
+        if key_config:
+            templ = Template(key_config['filename'])
+            private_key = Path(templ.substitute(i=args.identity))
 
-    archive = config.get('archive')
-    cert_archive = CertArchive(archive)
-    cert_archive.add(ssh_key_signed)
-    print(ssh_key.certinfo())
-    return os.EX_OK
+            if key_config.get('create_dirs', False):
+                private_key.parent.mkdir(parents=True, exist_ok=True)
+
+            ssh_key_signed.move(private_key)
+        else:
+            ssh_key_signed.move(Path(args.public_key).with_suffix(''),
+                                private_key=False,
+                                public_key=False)
+
+        print(ssh_key_signed.certinfo())
+
+    return 0
 
 def main():
     parser = argparse.ArgumentParser()
@@ -290,7 +323,11 @@ def main():
     service_log.setFormatter(formatter)
     LOGGER.addHandler(service_log)
 
-    return args.func(args, config)
+    try:
+        return args.func(args, config)
+    except subprocess.CalledProcessError as e:
+        LOGGER.error(e)
+        return 1
 
 if __name__ == '__main__':
     sys.exit(main())
