@@ -17,14 +17,14 @@ LOGGER = logging.getLogger()
 
 
 class SSHCA:
-    def __init__(self, signing_key=None, revoked_keys=None):
-        self._signing_key = None
+    def __init__(self, ca_key=None, revoked_keys=None):
+        self._ca_key = None
         self._revoked_keys = None
 
-        if signing_key is None:
-            self.signing_key = '/etc/sshca/ca'
+        if ca_key is None:
+            self.ca_key = '/etc/sshca/ca'
         else:
-            self.signing_key = signing_key
+            self.ca_key = ca_key
 
         if revoked_keys is None:
             self.revoked_keys = '/var/lib/sshca/revoked_keys'
@@ -32,12 +32,12 @@ class SSHCA:
             self.revoked_keys = revoked_keys
 
     @property
-    def signing_key(self):
-        return self._signing_key
+    def ca_key(self):
+        return self._ca_key
 
-    @signing_key.setter
-    def signing_key(self, filename):
-        self._signing_key = Path(filename)
+    @ca_key.setter
+    def ca_key(self, filename):
+        self._ca_key = Path(filename)
 
     @property
     def revoked_keys(self):
@@ -61,7 +61,7 @@ class SSHCA:
 
         cmd = [
             'ssh-keygen',
-            '-s', str(self.signing_key),
+            '-s', str(self.ca_key),
             '-I', identity,
             '-z', str(serial),
         ]
@@ -103,7 +103,7 @@ class SSHCA:
         cmd = [
             'ssh-keygen',
             '-k',
-            '-s', str(self.signing_key),
+            '-s', str(self.ca_key),
             '-f', str(self.revoked_keys),
         ]
 
@@ -213,9 +213,9 @@ def revoke_subcommand(args, config):
         return os.EX_USAGE
 
     ssh_key = SSHKey(public_key=args.public_key)
-    signing_key = config.get('signing_key')
+    ca_key = config.get('ca_key')
     revoked_keys = config.get('revoked_keys')
-    ca = SSHCA(signing_key, revoked_keys)
+    ca = SSHCA(ca_key, revoked_keys)
     ca.revoke_key(ssh_key)
     return os.EX_OK
 
@@ -244,9 +244,9 @@ def sign_subcommand(args, config):
 
         ssh_key = SSHKey(public_key=args.public_key)
 
-    signing_key = config.get('signing_key')
-    ca = SSHCA(signing_key)
-    print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.signing_key))
+    ca_key = config.get('ca_key')
+    ca = SSHCA(ca_key)
+    print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.ca_key))
     ssh_key_signed = ca.sign_key(ssh_key=ssh_key,
                                  identity=args.identity,
                                  principals=principals,

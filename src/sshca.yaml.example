@@ -5,7 +5,7 @@
 #
 
 # Ensure this key is protected!
-#signing_key: /etc/sshca/ca
+#ca_key: /etc/sshca/ca
 
 # Log file
 #log: /var/log/sshca/sshca.log
