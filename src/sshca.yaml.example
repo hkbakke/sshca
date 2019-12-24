@@ -19,9 +19,15 @@
 # Profile definitions. Defaults are shown commented out.
 profiles:
   admin:
+    # You should define the validity as the default ssh-keygen validity is
+    # forever
+    validity: +52w
     principals:
       - admin
-    validity: +52w
+    # If the options list is not defined the default ssh-keygen options will
+    # be used for a given key. Defining an options list always clears the
+    # default options to ensure only the listed options are added.
+    # An empty list can be used to ensure no options are added.
     options:
       - permit-agent-forwarding
       - permit-port-forwarding
@@ -32,13 +38,13 @@ profiles:
     principals:
       - borgbackup
     validity: +260w
-    # If the options list is not defined the default ssh-keygen options will
-    # be used for a given key. Defining an options list always ensures the
-    # default options are cleared first so only the listed options are used,
-    # so an empty list can be used to ensure no options are added.
     options: []
     generate_key:
+      # Unless overridden the ssh-keygen defaults will be used for type and
+      # bits
       #type: ed25519
+      #bits: 384
+
       filename: /path/to/sshkey
 
       # There is also support for template filenames

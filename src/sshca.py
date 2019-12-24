@@ -191,15 +191,18 @@ class CertArchive:
         shutil.copy(ssh_key.certificate, archived_cert)
 
 
-def generate_key(key_file, key_type=None):
-    if key_type is None:
-        key_type = 'ed25519'
+def generate_key(key_file, key_type=None, bits=None):
+    cmd = ['ssh-keygen']
 
-    cmd = [
-        'ssh-keygen',
-        '-t', key_type,
+    if bits is not None:
+        cmd.extend(['-b', str(bits)])
+
+    if key_type is not None:
+        cmd.extend(['-t', key_type])
+
+    cmd.extend([
         '-f', str(key_file),
-    ]
+    ])
     subprocess.run(cmd, check=True)
     ssh_key = SSHKey(private_key=key_file, public_key=key_file.with_suffix('.pub'))
     return ssh_key
@@ -231,7 +234,9 @@ def sign_subcommand(args, config):
         if key_config.get('create_dirs', False):
             filename.parent.mkdir(parents=True, exist_ok=True)
 
-        ssh_key = generate_key(filename, key_config.get('type', None))
+        ssh_key = generate_key(filename,
+                               key_config.get('type', None),
+                               key_config.get('bits', None))
     else:
         if not args.public_key:
             print('error: You must specify a public key (-k/--public-key)')
