@@ -32,6 +32,11 @@ profiles:
     principals:
       - borgbackup
     validity: +260w
+    # If the options list is not defined the default ssh-keygen options will
+    # be used for a given key. Defining an options list always ensures the
+    # default options are cleared first so only the listed options are used,
+    # so an empty list can be used to ensure no options are added.
+    options: []
     generate_key:
       #type: ed25519
       filename: /path/to/sshkey
@@ -47,18 +52,8 @@ profiles:
       # Create missing directories in filename path
       #create_dirs: false
 
-  # Principals and options are ignored for host certificates. Principals are
-  # not added by default by ssh-keygen when generating host keys, but may be
-  # added to ensure the public key is only concidered known when connecting to
-  # the host using a principal name.
-  # However, you must cover all possible ways to connect to the host
-  # for it to not give warnings, including connections using one of the host's
-  # IPv4 or IPv6 addresses, which may or may not be static, or connections
-  # using the short name instead of the FQDN. As one of the main purposes of
-  # using signed host keys is to not desensitize the user of these warnings,
-  # sshca as of now ensures no principals are added.
   host:
-    host: true
+    host_key: true
     validity: +52w
     generate_key:
       type: ed25519

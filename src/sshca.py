@@ -17,10 +17,35 @@ LOGGER = logging.getLogger()
 
 
 class SSHCA:
-    def __init__(self, signing_key, revoked_keys, archive):
-        self.signing_key = Path(signing_key)
-        self.revoked_keys = Path(revoked_keys)
-        self.archive = Path(archive)
+    def __init__(self, signing_key=None, revoked_keys=None):
+        self._signing_key = None
+        self._revoked_keys = None
+
+        if signing_key is None:
+            self.signing_key = '/etc/sshca/ca'
+        else:
+            self.signing_key = signing_key
+
+        if revoked_keys is None:
+            self.revoked_keys = '/var/lib/sshca/revoked_keys'
+        else:
+            self.revoked_keys = revoked_keys
+
+    @property
+    def signing_key(self):
+        return self._signing_key
+
+    @signing_key.setter
+    def signing_key(self, filename):
+        self._signing_key = Path(filename)
+
+    @property
+    def revoked_keys(self):
+        return self._revoked_keys
+
+    @revoked_keys.setter
+    def revoked_keys(self, filename):
+        self._revoked_keys = Path(filename)
 
     @staticmethod
     def _serial(length=12):
@@ -29,23 +54,11 @@ class SSHCA:
         '''
         return random.randint(1, 10**length)
 
-    @staticmethod
-    def certinfo(cert):
-        cmd = ['ssh-keygen', '-Lf', cert]
-        p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
-        return p.stdout
+    def sign_key(self, ssh_key, identity, principals=None, serial=None,
+                 validity=None, host_key=False, options=None):
+        if serial is None:
+            serial = self._serial()
 
-    def _archive(self, signed_cert, identity, serial, host):
-        if host:
-            identity_dir = self.archive / 'host' / identity
-        else:
-            identity_dir = self.archive / 'user' / identity
-
-        identity_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        archived_cert = identity_dir / Path('%s-cert.pub' % serial)
-        shutil.copy(signed_cert, archived_cert)
-
-    def _sign_key(self, public_key, identity, principals, validity, host, options, serial):
         cmd = [
             'ssh-keygen',
             '-s', str(self.signing_key),
@@ -58,38 +71,35 @@ class SSHCA:
                 '-V', validity,
             ])
 
-        if host:
+        if host_key:
             cmd.append('-h')
-        else:
+
+        if options is not None:
             cmd.extend([
-                '-n', ','.join(principals),
                 '-O', 'clear',
             ])
 
             for option in options:
                 cmd.extend(['-O', option])
 
-        cmd.append(str(public_key))
+        if principals:
+            cmd.extend([
+                '-n', ','.join(principals),
+            ])
+
+        cmd.append(str(ssh_key.public_key))
         LOGGER.debug('Command used for signing: %s', ' '.join(cmd))
         subprocess.run(cmd, check=True)
-        return public_key.parent / ('%s-cert.pub' % public_key.stem)
+        ssh_key.certificate = ssh_key.public_key.parent / Path('%s-cert.pub' % ssh_key.public_key.stem)
+        ssh_key.identity = identity
+        ssh_key.serial = serial
+        ssh_key.validity = validity
+        ssh_key.principals = principals
+        ssh_key.host_key = host_key
+        ssh_key.options = options
+        return ssh_key
 
-    def sign_key(self, public_key, identity, principals, validity=None, host=False, options=None):
-        if options is None:
-            options = []
-
-        serial = self._serial()
-        signed_key = self._sign_key(public_key=public_key,
-                                    identity=identity,
-                                    principals=principals,
-                                    validity=validity,
-                                    host=host,
-                                    options=options,
-                                    serial=serial)
-        self._archive(signed_key, identity, serial, host)
-        return signed_key
-
-    def revoke_key(self, public_key):
+    def revoke_key(self, ssh_key):
         cmd = [
             'ssh-keygen',
             '-k',
@@ -100,20 +110,27 @@ class SSHCA:
         if self.revoked_keys.is_file():
             cmd.append('-u')
 
-        cmd.append(public_key)
+        cmd.append(str(ssh_key.public_key))
         subprocess.run(cmd, check=True)
 
 
 class SSHKey:
     def __init__(self, public_key, private_key=None, certificate=None):
-        self.public_key = public_key
+        self._public_key = None
         self._private_key = None
         self._certificate = None
+        self.public_key = public_key
+        self.identity = None
+        self.serial = None
+        self.validity = None
+        self.options = None
+        self.principals = None
+        self.host_key = None
 
-        if private_key:
+        if private_key is not None:
             self.private_key = private_key
 
-        if certificate:
+        if certificate is not None:
             self.certificate = certificate
 
     @property
@@ -140,6 +157,39 @@ class SSHKey:
     def certificate(self, filename):
         self._certificate = Path(filename)
 
+    def certinfo(self):
+        cmd = ['ssh-keygen', '-Lf', str(self.certificate)]
+        p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
+        return p.stdout
+
+
+class CertArchive:
+    def __init__(self, archive=None):
+        self._archive = None
+
+        if archive is None:
+            self.archive = '/var/lib/sshca/archive'
+        else:
+            self.archive = archive
+
+    @property
+    def archive(self):
+        return self._archive
+
+    @archive.setter
+    def archive(self, directory):
+        self._archive = Path(directory)
+
+    def add(self, ssh_key):
+        if ssh_key.host_key:
+            identity_dir = self.archive / 'host' / ssh_key.identity
+        else:
+            identity_dir = self.archive / 'user' / ssh_key.identity
+
+        identity_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        archived_cert = identity_dir / Path('%s-cert.pub' % ssh_key.serial)
+        shutil.copy(ssh_key.certificate, archived_cert)
+
 
 def generate_key(key_file, key_type=None):
     if key_type is None:
@@ -151,28 +201,28 @@ def generate_key(key_file, key_type=None):
         '-f', str(key_file),
     ]
     subprocess.run(cmd, check=True)
-    key = SSHKey(private_key=key_file, public_key=key_file.with_suffix('.pub'))
-    return key
+    ssh_key = SSHKey(private_key=key_file, public_key=key_file.with_suffix('.pub'))
+    return ssh_key
 
-def revoke_subcommand(args, ca, config):
+def revoke_subcommand(args, config):
     if not args.public_key:
         print('error: You must specify a public key or KRL specification file (-k/--public-key)')
         return os.EX_USAGE
 
-    ca.revoke_key(args.public_key)
+    ssh_key = SSHKey(public_key=args.public_key)
+    signing_key = config.get('signing_key', None)
+    revoked_keys = config.get('revoked_keys', None)
+    ca = SSHCA(signing_key, revoked_keys)
+    ca.revoke_key(ssh_key)
     return os.EX_OK
 
-def sign_subcommand(args, ca, config):
+def sign_subcommand(args, config):
     profile = config['profiles'][args.profile]
     validity = profile.get('validity', None)
     key_config = profile.get('generate_key', None)
-    host_key = profile.get('host', False)
-    principals = []
-    options = []
-
-    if not host_key:
-        principals = profile['principals']
-        options = profile.get('options', None)
+    host_key = profile.get('host_key', False)
+    principals = profile.get('principals', None)
+    options = profile.get('options', None)
 
     if key_config:
         templ = Template(key_config['filename'])
@@ -181,22 +231,28 @@ def sign_subcommand(args, ca, config):
         if key_config.get('create_dirs', False):
             filename.parent.mkdir(parents=True, exist_ok=True)
 
-        key = generate_key(filename, key_config.get('type', None))
+        ssh_key = generate_key(filename, key_config.get('type', None))
     else:
         if not args.public_key:
             print('error: You must specify a public key (-k/--public-key)')
             return os.EX_USAGE
 
-        key = SSHKey(public_key=args.public_key)
+        ssh_key = SSHKey(public_key=args.public_key)
 
-    print("Signing '%s' using '%s'..." % (key.public_key, ca.signing_key))
-    ca.sign_key(public_key=key.public_key,
-                identity=args.identity,
-                principals=principals,
-                validity=validity,
-                options=options,
-                host=host_key)
+    signing_key = config.get('signing_key', None)
+    ca = SSHCA(signing_key)
+    print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.signing_key))
+    ssh_key_signed = ca.sign_key(ssh_key=ssh_key,
+                                 identity=args.identity,
+                                 principals=principals,
+                                 validity=validity,
+                                 options=options,
+                                 host_key=host_key)
 
+    archive = config.get('archive', None)
+    cert_archive = CertArchive(archive)
+    cert_archive.add(ssh_key_signed)
+    print(ssh_key.certinfo())
     return os.EX_OK
 
 def main():
@@ -229,12 +285,7 @@ def main():
     service_log.setFormatter(formatter)
     LOGGER.addHandler(service_log)
 
-    signing_key = config.get('signing_key', '/etc/sshca/ca')
-    revoked_keys = config.get('revoked_keys', '/var/lib/sshca/revoked_keys')
-    archive = config.get('archive', '/var/lib/sshca/archive')
-    ca = SSHCA(signing_key, revoked_keys, archive)
-
-    return args.func(args, ca, config)
+    return args.func(args, config)
 
 if __name__ == '__main__':
     sys.exit(main())
