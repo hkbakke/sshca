@@ -191,7 +191,7 @@ class CertArchive:
         shutil.copy(ssh_key.certificate, archived_cert)
 
 
-def generate_key(key_file, key_type=None, bits=None):
+def generate_key(filename, key_type=None, bits=None):
     cmd = ['ssh-keygen']
 
     if bits is not None:
@@ -201,10 +201,10 @@ def generate_key(key_file, key_type=None, bits=None):
         cmd.extend(['-t', key_type])
 
     cmd.extend([
-        '-f', str(key_file),
+        '-f', filename,
     ])
     subprocess.run(cmd, check=True)
-    ssh_key = SSHKey(private_key=key_file, public_key=key_file.with_suffix('.pub'))
+    ssh_key = SSHKey(private_key=filename, public_key=filename.with_suffix('.pub'))
     return ssh_key
 
 def revoke_subcommand(args, config):
