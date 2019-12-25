@@ -272,27 +272,26 @@ def sign_subcommand(args, config):
     with tempfile.TemporaryDirectory() as tmpdir:
         if key_config:
             templ = Template(key_config['filename'])
-            private_key = Path(templ.substitute(i=args.identity))
-            private_key_tmp = Path(tmpdir) / private_key.name
-            ssh_key = generate_key(private_key_tmp,
-                                   key_config.get('type'),
-                                   key_config.get('bits'))
+            ssh_key = SSHKey(templ.substitute(i=args.identity))
+            ssh_key_tmp = generate_key(Path(tmpdir) / ssh_key.private_key.name,
+                                       key_config.get('type'),
+                                       key_config.get('bits'))
         else:
             if not args.public_key:
                 print('error: You must specify a public key (-k/--public-key)')
                 return 2
 
-            public_key = Path(args.public_key)
-            public_key_tmp = Path(tmpdir) / public_key.name
+            ssh_key = SSHKey(Path(args.public_key).with_suffix(''))
+            ssh_key_tmp = SSHKey(Path(tmpdir) / ssh_key.private_key.name)
+
             # This copy is only needed because ssh-keygen outputs the
             # certificate in the same directory as the public key.
-            shutil.copy(public_key, public_key_tmp)
-            ssh_key = SSHKey(public_key_tmp.with_suffix(''))
+            shutil.copy(ssh_key.public_key, ssh_key_tmp.public_key)
 
         ca_key = config.get('ca_key')
         ca = SSHCA(ca_key)
         print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.ca_key))
-        ssh_key_signed = ca.sign_key(ssh_key=ssh_key,
+        ssh_key_signed = ca.sign_key(ssh_key=ssh_key_tmp,
                                      identity=args.identity,
                                      principals=principals,
                                      validity=validity,
@@ -303,20 +302,15 @@ def sign_subcommand(args, config):
         cert_archive = CertArchive(archive)
         cert_archive.add(ssh_key_signed)
 
-        # Add to final destination after the certificate is archived to
-        # ensure no certificate is issued without we having a copy of the
-        # certificate for revokation purposes.
         if key_config:
             if key_config.get('create_dirs', False):
-                private_key.parent.mkdir(parents=True, exist_ok=True)
+                ssh_key.private_key.parent.mkdir(parents=True, exist_ok=True)
 
-            shutil.copy(ssh_key_signed.private_key, private_key.parent)
-            shutil.copy(ssh_key_signed.public_key, private_key.parent)
-            shutil.copy(ssh_key_signed.certificate, private_key.parent)
-        else:
-            shutil.copy(ssh_key_signed.certificate, public_key.parent)
+            shutil.copy(ssh_key_signed.private_key, ssh_key.private_key)
+            shutil.copy(ssh_key_signed.public_key, ssh_key.public_key)
 
-        print(ssh_key_signed.certinfo())
+        shutil.copy(ssh_key_signed.certificate, ssh_key.certificate)
+        print(ssh_key.certinfo())
 
     return 0
 
