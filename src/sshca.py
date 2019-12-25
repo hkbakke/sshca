@@ -110,18 +110,14 @@ class SSHCA:
 
 
 class SSHKey:
-    def __init__(self, public_key, private_key=None, certificate=None):
-        self._public_key = None
+    def __init__(self, filename):
         self._private_key = None
+        self._public_key = None
         self._certificate = None
         self._certinfo = None
-        self.public_key = public_key
-
-        if private_key is not None:
-            self.private_key = private_key
-
-        if certificate is not None:
-            self.certificate = certificate
+        self.private_key = filename
+        self.public_key = '%s.pub' % filename
+        self.certificate = '%s-cert.pub' % filename
 
     @property
     def private_key(self):
@@ -205,21 +201,6 @@ class SSHKey:
             self._certinfo = p.stdout
         return self._certinfo
 
-    def move(self, dst, private_key=True, public_key=True, certificate=True):
-        if private_key and self._private_key is not None:
-            shutil.move(self._private_key, dst)
-            self.private_key = dst
-
-        if public_key and self._public_key is not None:
-            dst_public_key = dst.with_suffix('.pub')
-            shutil.move(self._public_key, dst_public_key)
-            self.public_key = dst_public_key
-
-        if certificate and self._certificate is not None:
-            dst_certificate = '%s-cert.pub' % dst
-            shutil.move(self._certificate, dst_certificate)
-            self.certificate = dst_certificate
-
 
 class CertArchive:
     def __init__(self, archive=None):
@@ -265,7 +246,7 @@ def generate_key(filename, key_type=None, bits=None):
         '-f', filename,
     ])
     subprocess.run(cmd, check=True)
-    ssh_key = SSHKey(private_key=filename, public_key=filename.with_suffix('.pub'))
+    ssh_key = SSHKey(filename)
     return ssh_key
 
 def revoke_subcommand(args, config):
@@ -273,7 +254,7 @@ def revoke_subcommand(args, config):
         print('error: You must specify a public key or KRL specification file (-k/--public-key)')
         return 2
 
-    ssh_key = SSHKey(public_key=args.public_key)
+    ssh_key = SSHKey(Path(args.public_key).with_suffix(''))
     ca_key = config.get('ca_key')
     revoked_keys = config.get('revoked_keys')
     ca = SSHCA(ca_key, revoked_keys)
@@ -290,7 +271,9 @@ def sign_subcommand(args, config):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         if key_config:
-            private_key_tmp = Path(tmpdir) / 'key'
+            templ = Template(key_config['filename'])
+            private_key = Path(templ.substitute(i=args.identity))
+            private_key_tmp = Path(tmpdir) / private_key.name
             ssh_key = generate_key(private_key_tmp,
                                    key_config.get('type'),
                                    key_config.get('bits'))
@@ -299,11 +282,12 @@ def sign_subcommand(args, config):
                 print('error: You must specify a public key (-k/--public-key)')
                 return 2
 
-            public_key_tmp = Path(tmpdir) / 'key.pub'
+            public_key = Path(args.public_key)
+            public_key_tmp = Path(tmpdir) / public_key.name
             # This copy is only needed because ssh-keygen outputs the
             # certificate in the same directory as the public key.
-            shutil.copy(args.public_key, public_key_tmp)
-            ssh_key = SSHKey(public_key=public_key_tmp)
+            shutil.copy(public_key, public_key_tmp)
+            ssh_key = SSHKey(public_key_tmp.with_suffix(''))
 
         ca_key = config.get('ca_key')
         ca = SSHCA(ca_key)
@@ -319,21 +303,18 @@ def sign_subcommand(args, config):
         cert_archive = CertArchive(archive)
         cert_archive.add(ssh_key_signed)
 
-        # Move to final destination after the certificate is archived to
+        # Add to final destination after the certificate is archived to
         # ensure no certificate is issued without we having a copy of the
         # certificate for revokation purposes.
         if key_config:
-            templ = Template(key_config['filename'])
-            private_key = Path(templ.substitute(i=args.identity))
-
             if key_config.get('create_dirs', False):
                 private_key.parent.mkdir(parents=True, exist_ok=True)
 
-            ssh_key_signed.move(private_key)
+            shutil.copy(ssh_key_signed.private_key, private_key.parent)
+            shutil.copy(ssh_key_signed.public_key, private_key.parent)
+            shutil.copy(ssh_key_signed.certificate, private_key.parent)
         else:
-            ssh_key_signed.move(Path(args.public_key).with_suffix(''),
-                                private_key=False,
-                                public_key=False)
+            shutil.copy(ssh_key_signed.certificate, public_key.parent)
 
         print(ssh_key_signed.certinfo())
 
