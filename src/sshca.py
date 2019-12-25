@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from string import Template
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import yaml
 
@@ -268,20 +268,36 @@ def sign_subcommand(args, config):
     host_key = profile.get('host_key', False)
     principals = profile.get('principals')
     options = profile.get('options')
+    pre_expiry_renewal = profile.get('pre_expiry_renewal', 30)
+
+    if key_config:
+        templ = Template(key_config['filename'])
+        ssh_key = SSHKey(templ.substitute(i=args.identity))
+    else:
+        if not args.public_key:
+            print('error: You must specify a public key (-k/--public-key)')
+            return 2
+
+        ssh_key = SSHKey(Path(args.public_key).with_suffix(''))
+
+    LOGGER.debug('pre_expiry_renewal is set to %s', pre_expiry_renewal)
+
+    if not args.force and pre_expiry_renewal and ssh_key.certificate.is_file():
+        LOGGER.info("Checking expiry information for existing certificate in '%s'", ssh_key.certificate)
+        if ssh_key.valid_to < datetime.now():
+            LOGGER.info('Existing certificate has expired. Continuing...')
+        elif ssh_key.valid_to - datetime.now() > timedelta(days=pre_expiry_renewal):
+            LOGGER.info('There are more than %s days until the existing certificate expires. Skipping.', pre_expiry_renewal)
+            return 0
 
     with tempfile.TemporaryDirectory() as tmpdir:
         if key_config:
-            templ = Template(key_config['filename'])
-            ssh_key = SSHKey(templ.substitute(i=args.identity))
-            ssh_key_tmp = generate_key(Path(tmpdir) / ssh_key.private_key.name,
+            key_name = Path(tmpdir) / ssh_key.private_key.name
+            LOGGER.info("Generating a new key in '%s'...", key_name)
+            ssh_key_tmp = generate_key(key_name,
                                        key_config.get('type'),
                                        key_config.get('bits'))
         else:
-            if not args.public_key:
-                print('error: You must specify a public key (-k/--public-key)')
-                return 2
-
-            ssh_key = SSHKey(Path(args.public_key).with_suffix(''))
             ssh_key_tmp = SSHKey(Path(tmpdir) / ssh_key.private_key.name)
 
             # This copy is only needed because ssh-keygen outputs the
@@ -290,7 +306,7 @@ def sign_subcommand(args, config):
 
         ca_key = config.get('ca_key')
         ca = SSHCA(ca_key)
-        print("Signing '%s' using '%s'..." % (ssh_key.public_key, ca.ca_key))
+        LOGGER.info("Signing '%s' using '%s'...", ssh_key.public_key, ca.ca_key)
         ssh_key_signed = ca.sign_key(ssh_key=ssh_key_tmp,
                                      identity=args.identity,
                                      principals=principals,
@@ -310,7 +326,7 @@ def sign_subcommand(args, config):
             shutil.copy(ssh_key_signed.public_key, ssh_key.public_key)
 
         shutil.copy(ssh_key_signed.certificate, ssh_key.certificate)
-        print(ssh_key.certinfo())
+        LOGGER.info(ssh_key.certinfo())
 
     return 0
 
@@ -323,6 +339,8 @@ def main():
     sign_parser.add_argument('-p', '--profile', required=True)
     sign_parser.add_argument('-i', '--identity', required=True)
     sign_parser.add_argument('-k', '--public-key')
+    sign_parser.add_argument('-f', '--force', action='store_true',
+                             help='always renew certificate')
     sign_parser.set_defaults(func=sign_subcommand)
     revoke_parser = subparsers.add_parser('revoke', help='revoke public key')
     revoke_parser.add_argument('-k', '--public-key')
@@ -339,10 +357,12 @@ def main():
 
     LOGGER.setLevel(log_level)
     log = config.get('log', '/var/log/sshca/sshca.log')
-    service_log = logging.FileHandler(log)
+    logfile = logging.FileHandler(log)
     formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-    service_log.setFormatter(formatter)
-    LOGGER.addHandler(service_log)
+    logfile.setFormatter(formatter)
+    ch = logging.StreamHandler()
+    LOGGER.addHandler(logfile)
+    LOGGER.addHandler(ch)
 
     try:
         return args.func(args, config)

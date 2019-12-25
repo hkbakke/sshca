@@ -16,11 +16,11 @@
 # Archive for signed certs
 #archive: /var/lib/sshca/archive
 
-# Profile definitions. Defaults are shown commented out.
+# Profile definition examples
 profiles:
   admin:
     # You should define the validity as the default ssh-keygen validity is
-    # forever
+    # forever. See ssh-keygen manual for format documentation.
     validity: +52w
     principals:
       - admin
@@ -39,17 +39,18 @@ profiles:
       - borgbackup
     validity: +260w
 
-    # How long before expiry a certificate is allowed to be renewed if an
+    # How many days before expiry a certificate is allowed to be renewed if an
     # exisiting certificate is found. If not set the certificate will always
-    # be renewed.
-    #pre_expiry_renewal_interval:
+    # be renewed. The default is 30 days. You can force renewal regardless of
+    # this setting by providing the '--force' argument.
+    #pre_expiry_renewal: 30
 
     options: []
     generate_key:
       # Unless overridden the ssh-keygen defaults will be used for type and
       # bits
-      #type: ed25519
-      #bits: 384
+      type: rsa
+      bits: 4096
 
       filename: /path/to/sshkey
 
