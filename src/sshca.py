@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from string import Template
 from pathlib import Path
+from datetime import datetime
 
 import yaml
 
@@ -48,11 +49,11 @@ class SSHCA:
         self._revoked_keys = Path(filename)
 
     @staticmethod
-    def _serial(length=12):
+    def _serial():
         '''
-        19 digits seems to be the maximum serial length in signed SSH keys
+        SSH certificates have a serial field of 64 bits
         '''
-        return random.randint(1, 10**length)
+        return random.randint(1, 2**64)
 
     def sign_key(self, ssh_key, identity, principals=None, serial=None,
                  validity=None, host_key=False, options=None):
@@ -91,12 +92,6 @@ class SSHCA:
         LOGGER.debug('Command used for signing: %s', ' '.join(cmd))
         subprocess.run(cmd, check=True)
         ssh_key.certificate = '%s-cert.pub' % ssh_key.public_key.with_suffix('')
-        ssh_key.identity = identity
-        ssh_key.serial = serial
-        ssh_key.validity = validity
-        ssh_key.principals = principals
-        ssh_key.host_key = host_key
-        ssh_key.options = options
         return ssh_key
 
     def revoke_key(self, ssh_key):
@@ -119,13 +114,8 @@ class SSHKey:
         self._public_key = None
         self._private_key = None
         self._certificate = None
+        self._certinfo = None
         self.public_key = public_key
-        self.identity = None
-        self.serial = None
-        self.validity = None
-        self.options = None
-        self.principals = None
-        self.host_key = None
 
         if private_key is not None:
             self.private_key = private_key
@@ -157,10 +147,63 @@ class SSHKey:
     def certificate(self, filename):
         self._certificate = Path(filename)
 
+    @property
+    def identity(self):
+        info = self.certinfo()
+        for line in info.splitlines():
+            if line.strip().startswith('Key ID:'):
+                return line.split(':', 1)[1].strip().lstrip('"').rstrip('"')
+        raise ValueError("Could not find 'Key ID' in certficate info")
+
+    @property
+    def valid_from(self):
+        info = self.certinfo()
+        for line in info.splitlines():
+            if line.strip().startswith('Valid:'):
+                valid = line.split(':', 1)[1].strip()
+                if valid == 'forever':
+                    return None
+                return datetime.strptime(valid.split()[1], '%Y-%m-%dT%H:%M:%S')
+        raise ValueError("Could not find 'Valid' in certficate info")
+
+    @property
+    def valid_to(self):
+        info = self.certinfo()
+        for line in info.splitlines():
+            if line.strip().startswith('Valid:'):
+                valid = line.split(':', 1)[1].strip()
+                if valid == 'forever':
+                    return None
+                return datetime.strptime(valid.split()[3], '%Y-%m-%dT%H:%M:%S')
+        raise ValueError("Could not find 'Valid' in certficate info")
+
+    @property
+    def serial(self):
+        info = self.certinfo()
+        for line in info.splitlines():
+            if line.strip().startswith('Serial:'):
+                return int(line.split(':', 1)[1].strip())
+        raise ValueError("Could not find 'Serial' in certficate info")
+
+    @property
+    def host_key(self):
+        info = self.certinfo()
+        for line in info.splitlines():
+            if line.strip().startswith('Type:'):
+                if 'host certificate' in line.split(':', 1)[1].strip():
+                    return True
+                return False
+        raise ValueError("Could not find 'Type' in certficate info")
+
     def certinfo(self):
-        cmd = ['ssh-keygen', '-Lf', str(self.certificate)]
-        p = subprocess.run(cmd, capture_output=True, universal_newlines=True, check=True)
-        return p.stdout
+        if not self._certinfo:
+            cmd = ['ssh-keygen', '-Lf', str(self.certificate)]
+            p = subprocess.run(cmd,
+                               capture_output=True,
+                               universal_newlines=True,
+                               check=True)
+            self._certinfo = p.stdout
+        return self._certinfo
 
     def move(self, dst, private_key=True, public_key=True, certificate=True):
         if private_key and self._private_key is not None:
@@ -203,6 +246,9 @@ class CertArchive:
 
         identity_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         archived_cert = identity_dir / Path('%s-cert.pub' % ssh_key.serial)
+        LOGGER.info("Archiving certificate '%s' to '%s'",
+                    ssh_key.certificate,
+                    archived_cert)
         shutil.copy(ssh_key.certificate, archived_cert)
 
 

@@ -58,6 +58,11 @@ profiles:
       # Create missing directories in filename path
       #create_dirs: false
 
+      # How long before expiry a certificate is allowed to be renewed if an
+      # exisiting certificate is found in the specified location.
+      # If not set the certificate will always be renewed.
+      #pre_expiry_renewal_limit:
+
   host:
     host_key: true
     validity: +52w
