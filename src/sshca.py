@@ -283,11 +283,13 @@ def sign_subcommand(args, config):
     LOGGER.debug('pre_expiry_renewal is set to %s', pre_expiry_renewal)
 
     if not args.force and pre_expiry_renewal and ssh_key.certificate.is_file():
-        LOGGER.info("Checking expiry information for existing certificate in '%s'", ssh_key.certificate)
+        LOGGER.info("Checking expiry information for existing certificate in '%s'",
+                    ssh_key.certificate)
         if ssh_key.valid_to < datetime.now():
             LOGGER.info('Existing certificate has expired. Continuing...')
         elif ssh_key.valid_to - datetime.now() > timedelta(days=pre_expiry_renewal):
-            LOGGER.info('There are more than %s days until the existing certificate expires. Skipping.', pre_expiry_renewal)
+            LOGGER.info('There are more than %s days until the existing certificate expires. Skipping.',
+                        pre_expiry_renewal)
             return 0
 
     with tempfile.TemporaryDirectory() as tmpdir:
