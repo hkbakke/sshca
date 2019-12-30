@@ -304,6 +304,9 @@ def sign_subcommand(args, config):
             # certificate in the same directory as the public key.
             shutil.copy(ssh_key.public_key, ssh_key_tmp.public_key)
 
+        if args.principals:
+            principals.extend(args.principals.split(','))
+
         ca_key = config.get('ca_key')
         ca = SSHCA(ca_key)
         LOGGER.info("Signing '%s' using '%s'...", ssh_key.public_key, ca.ca_key)
@@ -339,6 +342,8 @@ def main():
     sign_parser.add_argument('-p', '--profile', required=True)
     sign_parser.add_argument('-i', '--identity', required=True)
     sign_parser.add_argument('-k', '--public-key')
+    sign_parser.add_argument('-n', '--principals',
+                             help='comma separated list of principals to append to profile principals')
     sign_parser.add_argument('-f', '--force', action='store_true',
                              help='always renew certificate')
     sign_parser.set_defaults(func=sign_subcommand)
