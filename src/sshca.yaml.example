@@ -70,5 +70,5 @@ profiles:
     validity: +52w
     generate_key:
       type: ed25519
-      filename: /path/to/hostkey
+      filename: /srv/salt/file-pillar/hosts/$i/ssh/server/host_keys/ed25519/key
       create_dirs: true
