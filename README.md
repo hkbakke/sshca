@@ -1,7 +1,7 @@
 # Installation
 
     sudo apt install python3-yaml
-    git clone https://gitlab.proikt.com/proikt/sshca
+    git clone https://github.com/hkbakke/sshca.git
     cd sshca
     ./install.sh
 
