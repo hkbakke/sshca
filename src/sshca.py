@@ -149,7 +149,7 @@ class SSHKey:
         for line in info.splitlines():
             if line.strip().startswith('Key ID:'):
                 return line.split(':', 1)[1].strip().lstrip('"').rstrip('"')
-        raise ValueError("Could not find 'Key ID' in certficate info")
+        raise ValueError("Could not find 'Key ID' in certificate info")
 
     @property
     def valid_from(self):
@@ -160,7 +160,7 @@ class SSHKey:
                 if valid == 'forever':
                     return None
                 return datetime.strptime(valid.split()[1], '%Y-%m-%dT%H:%M:%S')
-        raise ValueError("Could not find 'Valid' in certficate info")
+        raise ValueError("Could not find 'Valid' in certificate info")
 
     @property
     def valid_to(self):
@@ -171,7 +171,7 @@ class SSHKey:
                 if valid == 'forever':
                     return None
                 return datetime.strptime(valid.split()[3], '%Y-%m-%dT%H:%M:%S')
-        raise ValueError("Could not find 'Valid' in certficate info")
+        raise ValueError("Could not find 'Valid' in certificate info")
 
     @property
     def serial(self):
@@ -179,7 +179,7 @@ class SSHKey:
         for line in info.splitlines():
             if line.strip().startswith('Serial:'):
                 return int(line.split(':', 1)[1].strip())
-        raise ValueError("Could not find 'Serial' in certficate info")
+        raise ValueError("Could not find 'Serial' in certificate info")
 
     @property
     def host_key(self):
@@ -189,7 +189,7 @@ class SSHKey:
                 if 'host certificate' in line.split(':', 1)[1].strip():
                     return True
                 return False
-        raise ValueError("Could not find 'Type' in certficate info")
+        raise ValueError("Could not find 'Type' in certificate info")
 
     def certinfo(self):
         if not self._certinfo:
