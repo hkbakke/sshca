@@ -19,4 +19,4 @@ Example where profile contains the `generate_key` option to also handle key gene
 
 To revoke a certificate
 
-   sshca revoke -k <public key or KRL specification file>
+    sshca revoke -k <public key or KRL specification file>
