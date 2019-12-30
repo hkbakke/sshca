@@ -1,3 +1,6 @@
+# About
+A small utility to handle administration of SSH CAs. sshca uses a system based on profiles defined in YAML for repeatability. It also supports key generation and templated output paths to simplify generating keys and certificates for large amounts of hosts or users. sshca ensures all signed certificates are archived for revocation purposes, and it also handles revocation of certificates if needed.
+
 # Installation
 
     sudo apt install python3-yaml
