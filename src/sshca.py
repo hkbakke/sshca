@@ -56,7 +56,7 @@ class SSHCA:
         return random.randint(1, 2**64)
 
     def sign_key(self, ssh_key, identity, principals=None, serial=None,
-                 validity=None, host_key=False, options=None):
+                 validity=None, cert_type=None, options=None):
         if serial is None:
             serial = self._serial()
 
@@ -72,7 +72,7 @@ class SSHCA:
                 '-V', validity,
             ])
 
-        if host_key:
+        if cert_type == 'host':
             cmd.append('-h')
 
         if options is not None:
@@ -182,13 +182,15 @@ class SSHKey:
         raise ValueError("Could not find 'Serial' in certificate info")
 
     @property
-    def host_key(self):
+    def cert_type(self):
         info = self.certinfo()
         for line in info.splitlines():
             if line.strip().startswith('Type:'):
                 if 'host certificate' in line.split(':', 1)[1].strip():
-                    return True
-                return False
+                    return 'host'
+                if 'user certificate' in line.split(':', 1)[1].strip():
+                    return 'user'
+                raise ValueError("Unknown certificate type")
         raise ValueError("Could not find 'Type' in certificate info")
 
     def certinfo(self):
@@ -220,11 +222,7 @@ class CertArchive:
         self._archive = Path(directory)
 
     def add(self, ssh_key):
-        if ssh_key.host_key:
-            identity_dir = self.archive / 'host' / ssh_key.identity
-        else:
-            identity_dir = self.archive / 'user' / ssh_key.identity
-
+        identity_dir = self.archive / ssh_key.cert_type / ssh_key.identity
         identity_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         archived_cert = identity_dir / Path('%s-cert.pub' % ssh_key.serial)
         LOGGER.info("Archiving certificate '%s' to '%s'",
@@ -265,7 +263,7 @@ def sign_subcommand(args, config):
     profile = config['profiles'][args.profile]
     validity = profile.get('validity')
     key_config = profile.get('generate_key')
-    host_key = profile.get('host_key', False)
+    cert_type = profile.get('cert_type', 'user')
     principals = profile.get('principals')
     options = profile.get('options')
     pre_expiry_renewal = profile.get('pre_expiry_renewal', 30)
@@ -297,7 +295,7 @@ def sign_subcommand(args, config):
             key_name = Path(tmpdir) / ssh_key.private_key.name
             LOGGER.info("Generating a new key in '%s'...", key_name)
             ssh_key_tmp = generate_key(key_name,
-                                       key_config.get('type'),
+                                       key_config.get('key_type'),
                                        key_config.get('bits'))
         else:
             ssh_key_tmp = SSHKey(Path(tmpdir) / ssh_key.private_key.name)
@@ -317,7 +315,7 @@ def sign_subcommand(args, config):
                                      principals=principals,
                                      validity=validity,
                                      options=options,
-                                     host_key=host_key)
+                                     cert_type=cert_type)
 
         archive = config.get('archive')
         cert_archive = CertArchive(archive)

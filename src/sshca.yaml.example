@@ -19,6 +19,7 @@
 # Profile definition examples
 profiles:
   admin:
+    #cert_type: user
     # You should define the validity as the default ssh-keygen validity is
     # forever. See ssh-keygen manual for format documentation.
     validity: +52w
@@ -49,7 +50,7 @@ profiles:
     generate_key:
       # Unless overridden the ssh-keygen defaults will be used for type and
       # bits
-      type: rsa
+      key_type: rsa
       bits: 4096
 
       filename: /path/to/sshkey
@@ -66,9 +67,11 @@ profiles:
       #create_dirs: false
 
   host:
-    host_key: true
+    cert_type: host
     validity: +52w
     generate_key:
-      type: ed25519
+      key_type: ed25519
       filename: /srv/salt/file-pillar/hosts/$i/ssh/server/host_keys/ed25519/key
       create_dirs: true
+
+# vim: ft=yaml
