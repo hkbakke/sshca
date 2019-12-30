@@ -1,5 +1,5 @@
 #
-# SSHSIGN EXAMPLE CONFIG
+# SSHCA EXAMPLE CONFIG
 #
 #  Configure and place in `/etc/sshca/sshca.yaml`
 #
