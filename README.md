@@ -1,5 +1,5 @@
 # SSHCA
-A small utility to handle administration of SSH CAs. sshca uses a system based on profiles defined in YAML for repeatability. It also supports key generation and templated output paths to simplify generating keys and certificates for large amounts of hosts or users. sshca ensures all signed certificates are archived for revocation purposes, and it also handles revocation of certificates if needed.
+sshca is a small utility to handle administration of SSH CAs. sshca uses a system based on profiles defined in YAML for repeatability. It also supports key generation and templated output paths to simplify generating keys and certificates for large amounts of hosts or users. sshca ensures all signed certificates are archived for revocation purposes, and it also handles revocation of certificates if needed. This is not aimed to be a service that end users interfaces with for getting short lived SSH certificates for authentication, for that use something like HashiCorp Vault, but rather to be used as an helper or automation tool when the system administrator want to generate keys and certificates from a central location, typically for distribution with a configuration management tool.
 
 # Installation
 
