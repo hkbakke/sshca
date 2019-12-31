@@ -261,6 +261,7 @@ def revoke_subcommand(args, config):
 
 def sign_subcommand(args, config):
     profile = config['profiles'][args.profile]
+    ca_key = profile.get('ca_key', config.get('ca_key'))
     validity = profile.get('validity')
     key_config = profile.get('generate_key')
     cert_type = profile.get('cert_type', 'user')
@@ -307,7 +308,6 @@ def sign_subcommand(args, config):
         if args.principals:
             principals.extend(args.principals.split(','))
 
-        ca_key = config.get('ca_key')
         ca = SSHCA(ca_key)
         LOGGER.info("Signing '%s' using '%s'...", ssh_key.public_key, ca.ca_key)
         ssh_key_signed = ca.sign_key(ssh_key=ssh_key_tmp,

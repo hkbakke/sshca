@@ -40,6 +40,10 @@ profiles:
       - borgbackup
     validity: +260w
 
+    # You can have profile specific CA signing keys if you want. If not defined
+    # the global ca_key is used.
+    #ca_key: /etc/sshca/host_ca
+
     # How many days before expiry a certificate is allowed to be renewed if an
     # exisiting certificate is found. If not set the certificate will always
     # be renewed. The default is 30 days. You can force renewal regardless of
