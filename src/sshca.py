@@ -266,16 +266,16 @@ class CertArchive:
                     archived_cert)
         shutil.copy(ssh_key.certificate, archived_cert)
 
-    def get_cert(self, cert_type, identity, serial):
-        cert = self.archive / Path(cert_type) / Path(identity) / Path('%s-cert.pub' % serial)
-        if not cert.is_file():
-            raise FileNotFoundError("'%s' was not found in the archive" % cert)
-        return SSHKey(certificate=cert)
+    def get_certs(self, cert_type, identity_pattern=None, serial_pattern=None):
+        if identity_pattern is None:
+            identity_pattern = '*'
 
-    def get_certs(self, cert_type, identity_pattern):
+        if serial_pattern is None:
+            serial_pattern = '*'
+
         identities = (self.archive / Path(cert_type)).glob(identity_pattern)
         for identity in identities:
-            for cert in identity.iterdir():
+            for cert in identity.glob('%s-cert.pub' % serial_pattern):
                 yield SSHKey(certificate=cert)
 
 
@@ -299,13 +299,7 @@ def show_subcommand(args, config):
     archive = config.get('archive')
     revoked_keys = config.get('revoked_keys')
     cert_archive = CertArchive(archive)
-
-    if args.serial:
-        certs = [
-            cert_archive.get_cert(args.cert_type, args.identity, args.serial)
-        ]
-    else:
-        certs = cert_archive.get_certs(args.cert_type, args.identity)
+    certs = cert_archive.get_certs(args.certtype, args.identity, args.serial)
 
     if args.info:
         for cert in certs:
@@ -326,11 +320,11 @@ def show_subcommand(args, config):
     return 0
 
 def revoke_subcommand(args, config):
-    if not args.public_key:
+    if not args.certificate:
         print('error: You must specify a public key file (-k/--public-key)')
         return 2
 
-    ssh_key = SSHKey(public_key=args.public_key)
+    ssh_key = SSHKey(public_key=args.certificate)
     revoked_keys = config.get('revoked_keys')
     ca = SSHCA(revoked_keys=revoked_keys)
     ca.revoke_key(ssh_key)
@@ -417,8 +411,8 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true')
     subparsers = parser.add_subparsers(title='subcommands', dest='subcommand')
     sign_parser = subparsers.add_parser('sign', help='sign public key')
-    sign_parser.add_argument('-p', '--profile', required=True)
-    sign_parser.add_argument('-i', '--identity', required=True)
+    sign_parser.add_argument('profile')
+    sign_parser.add_argument('identity')
     sign_parser.add_argument('-k', '--public-key')
     sign_parser.add_argument('-n', '--principals',
                              help='comma separated list of principals to append to profile principals')
@@ -426,15 +420,15 @@ def main():
                              help='always renew certificate')
     sign_parser.set_defaults(func=sign_subcommand)
     revoke_parser = subparsers.add_parser('revoke', help='revoke public key')
-    revoke_parser.add_argument('-k', '--public-key')
+    revoke_parser.add_argument('certificate', help='certificate file to revoke')
     revoke_parser.set_defaults(func=revoke_subcommand)
     show_parser = subparsers.add_parser('show', help='show signed certificates info')
-    show_parser.add_argument('-t', '--cert-type', required=True)
-    show_parser.add_argument('-i', '--identity', help='glob match pattern',
-                             required=True)
-    show_parser.add_argument('--info', action='store_true',
-                             help='display certificate info')
-    show_parser.add_argument('-s', '--serial')
+    show_parser.add_argument('certtype', help='certificate type',
+                             choices=['user', 'host'])
+    show_parser.add_argument('identity', help='glob match pattern')
+    show_parser.add_argument('-s', '--serial', help='glob match pattern')
+    show_parser.add_argument('-i', '--info', help='show certificate info',
+                             action='store_true')
     show_parser.set_defaults(func=show_subcommand)
     args = parser.parse_args()
 
