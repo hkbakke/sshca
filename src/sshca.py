@@ -98,7 +98,6 @@ class SSHCA:
         cmd = [
             'ssh-keygen',
             '-k',
-            '-s', str(self.ca_key),
             '-f', str(self.revoked_keys),
         ]
 
@@ -108,16 +107,44 @@ class SSHCA:
         cmd.append(str(ssh_key.public_key))
         subprocess.run(cmd, check=True)
 
+    def is_revoked(self, ssh_key):
+        cmd = [
+            'ssh-keygen',
+            '-Qf',
+            str(self.revoked_keys),
+            str(ssh_key.certificate)
+        ]
+
+        try:
+            subprocess.run(cmd,
+                           capture_output=True,
+                           universal_newlines=True,
+                           check=True)
+        except subprocess.CalledProcessError as e:
+            if 'REVOKED' in e.stdout:
+                return True
+            raise
+        return False
+
 
 class SSHKey:
-    def __init__(self, filename):
+    def __init__(self, private_key=None, public_key=None, certificate=None):
+        if not any([private_key, public_key, certificate]):
+            raise ValueError('At least one of private_key, public_key or certificate must be set')
+
         self._private_key = None
         self._public_key = None
         self._certificate = None
         self._certinfo = None
-        self.private_key = filename
-        self.public_key = '%s.pub' % filename
-        self.certificate = '%s-cert.pub' % filename
+
+        if private_key is not None:
+            self.private_key = private_key
+
+        if public_key is not None:
+            self.public_key = public_key
+
+        if certificate is not None:
+            self.certificate = certificate
 
     @property
     def private_key(self):
@@ -129,6 +156,9 @@ class SSHKey:
 
     @property
     def public_key(self):
+        if not self._public_key:
+            if self.private_key:
+                self.public_key = self.private_key.with_suffix('.pub')
         return self._public_key
 
     @public_key.setter
@@ -137,6 +167,9 @@ class SSHKey:
 
     @property
     def certificate(self):
+        if not self._certificate:
+            if self.public_key:
+                self.certificate = '%s-cert.pub' % self.public_key.with_suffix('')
         return self._certificate
 
     @certificate.setter
@@ -203,6 +236,9 @@ class SSHKey:
             self._certinfo = p.stdout
         return self._certinfo
 
+    def is_expired(self):
+        return self.valid_to is not None and self.valid_to < datetime.now()
+
 
 class CertArchive:
     def __init__(self, archive=None):
@@ -230,6 +266,18 @@ class CertArchive:
                     archived_cert)
         shutil.copy(ssh_key.certificate, archived_cert)
 
+    def get_cert(self, cert_type, identity, serial):
+        cert = self.archive / Path(cert_type) / Path(identity) / Path('%s-cert.pub' % serial)
+        if not cert.is_file():
+            raise FileNotFoundError("'%s' was not found in the archive" % cert)
+        return SSHKey(certificate=cert)
+
+    def get_certs(self, cert_type, identity_pattern):
+        identities = (self.archive / Path(cert_type)).glob(identity_pattern)
+        for identity in identities:
+            for cert in identity.iterdir():
+                yield SSHKey(certificate=cert)
+
 
 def generate_key(filename, key_type=None, bits=None):
     cmd = ['ssh-keygen']
@@ -244,18 +292,47 @@ def generate_key(filename, key_type=None, bits=None):
         '-f', filename,
     ])
     subprocess.run(cmd, check=True)
-    ssh_key = SSHKey(filename)
+    ssh_key = SSHKey(private_key=filename)
     return ssh_key
+
+def show_subcommand(args, config):
+    archive = config.get('archive')
+    revoked_keys = config.get('revoked_keys')
+    cert_archive = CertArchive(archive)
+
+    if args.serial:
+        certs = [
+            cert_archive.get_cert(args.cert_type, args.identity, args.serial)
+        ]
+    else:
+        certs = cert_archive.get_certs(args.cert_type, args.identity)
+
+    if args.info:
+        for cert in certs:
+            print(cert.certinfo())
+    else:
+        ca = SSHCA(revoked_keys=revoked_keys)
+
+        for cert in certs:
+            if cert.is_expired():
+                validity = 'expired'
+            else:
+                validity = 'valid'
+
+            if ca.is_revoked(cert):
+                validity = '%s, revoked' % validity
+
+            print('%s [%s]' % (cert.certificate, validity))
+    return 0
 
 def revoke_subcommand(args, config):
     if not args.public_key:
-        print('error: You must specify a public key or KRL specification file (-k/--public-key)')
+        print('error: You must specify a public key file (-k/--public-key)')
         return 2
 
-    ssh_key = SSHKey(Path(args.public_key).with_suffix(''))
-    ca_key = config.get('ca_key')
+    ssh_key = SSHKey(public_key=args.public_key)
     revoked_keys = config.get('revoked_keys')
-    ca = SSHCA(ca_key, revoked_keys)
+    ca = SSHCA(revoked_keys=revoked_keys)
     ca.revoke_key(ssh_key)
     return 0
 
@@ -271,20 +348,21 @@ def sign_subcommand(args, config):
 
     if key_config:
         templ = Template(key_config['filename'])
-        ssh_key = SSHKey(templ.substitute(i=args.identity))
+        private_key = templ.substitute(i=args.identity)
+        ssh_key = SSHKey(private_key=private_key)
     else:
         if not args.public_key:
             print('error: You must specify a public key (-k/--public-key)')
             return 2
 
-        ssh_key = SSHKey(Path(args.public_key).with_suffix(''))
+        ssh_key = SSHKey(public_key=args.public_key)
 
     LOGGER.debug('pre_expiry_renewal is set to %s', pre_expiry_renewal)
 
     if not args.force and pre_expiry_renewal and ssh_key.certificate.is_file():
         LOGGER.info("Checking expiry information for existing certificate in '%s'",
                     ssh_key.certificate)
-        if ssh_key.valid_to < datetime.now():
+        if ssh_key.is_expired():
             LOGGER.info('Existing certificate has expired. Continuing...')
         elif ssh_key.valid_to - datetime.now() > timedelta(days=pre_expiry_renewal):
             LOGGER.info('There are more than %s days until the existing certificate expires. Skipping.',
@@ -350,6 +428,14 @@ def main():
     revoke_parser = subparsers.add_parser('revoke', help='revoke public key')
     revoke_parser.add_argument('-k', '--public-key')
     revoke_parser.set_defaults(func=revoke_subcommand)
+    show_parser = subparsers.add_parser('show', help='show signed certificates info')
+    show_parser.add_argument('-t', '--cert-type', required=True)
+    show_parser.add_argument('-i', '--identity', help='glob match pattern',
+                             required=True)
+    show_parser.add_argument('--info', action='store_true',
+                             help='display certificate info')
+    show_parser.add_argument('-s', '--serial')
+    show_parser.set_defaults(func=show_subcommand)
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:

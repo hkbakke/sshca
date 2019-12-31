@@ -26,4 +26,16 @@ Example where profile contains the `generate_key` option to also handle key gene
 
 To revoke a certificate
 
-    sshca revoke -k <public key or KRL specification file>
+    sshca revoke -k <public key file>
+
+List signed certificates with validity and revocation status
+
+    sshca show -t user -i "<identity glob pattern>"
+
+List certificate info for some signed certificates
+
+    sshca show -t host -i "*.example.com" --info
+
+Show specific certificate
+
+    sshca show -t user -i "<exact identity>" -s <serial> [--info]
