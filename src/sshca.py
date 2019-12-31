@@ -315,12 +315,12 @@ def show_subcommand(args, config):
 
         for cert in certs:
             if cert.is_expired():
-                validity = 'expired'
+                validity = 'EXPIRED'
             else:
-                validity = 'valid'
+                validity = 'VALID'
 
             if ca.is_revoked(cert):
-                validity = '%s, revoked' % validity
+                validity = '%s,REVOKED' % validity
 
             print('%s [%s]' % (cert.certificate, validity))
     return 0
