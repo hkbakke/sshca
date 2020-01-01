@@ -12,6 +12,7 @@
 
 # Revoked keys file
 #revoked_keys: /var/lib/sshca/revoked_keys
+#revoked_host_keys: /var/lib/sshca/revoked_host_keys
 
 # Archive for signed certs
 #archive: /var/lib/sshca/archive

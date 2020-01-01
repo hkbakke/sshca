@@ -16,6 +16,7 @@ import yaml
 
 # Default values
 REVOKED_KEYS = '/var/lib/sshca/revoked_keys'
+REVOKED_HOST_KEYS = '/var/lib/sshca/revoked_host_keys'
 CA_KEY = '/etc/sshca/ca'
 ARCHIVE = '/var/lib/sshca/archive'
 
@@ -276,6 +277,8 @@ def show_subcommand(args, config):
     else:
         revoked_keys = config.get('revoked_keys', REVOKED_KEYS)
         rl = RevocationList(revoked_keys)
+        revoked_host_keys = config.get('revoked_host_keys', REVOKED_HOST_KEYS)
+        host_rl = RevocationList(revoked_host_keys)
 
         for cert in certs:
             if cert.is_expired():
@@ -283,8 +286,12 @@ def show_subcommand(args, config):
             else:
                 validity = 'VALID'
 
-            if rl.is_revoked(cert):
-                validity = '%s,REVOKED' % validity
+            if cert.cert_type == 'host':
+                if host_rl.is_revoked(cert):
+                    validity = '%s,REVOKED' % validity
+            else:
+                if rl.is_revoked(cert):
+                    validity = '%s,REVOKED' % validity
 
             print('%s [%s]' % (cert.certificate, validity))
     return 0
@@ -295,7 +302,12 @@ def revoke_subcommand(args, config):
         return 2
 
     ssh_key = SSHKey(certificate=args.certificate)
-    revoked_keys = config.get('revoked_keys', REVOKED_KEYS)
+
+    if ssh_key.cert_type == 'host':
+        revoked_keys = config.get('revoked_host_keys', REVOKED_HOST_KEYS)
+    else:
+        revoked_keys = config.get('revoked_keys', REVOKED_KEYS)
+
     rl = RevocationList(revoked_keys)
     rl.add(ssh_key)
     return 0
