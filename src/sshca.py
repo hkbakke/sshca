@@ -138,8 +138,10 @@ class SSHKey:
             if line.strip().startswith('Valid:'):
                 valid = line.split(':', 1)[1].strip()
                 if valid == 'forever':
-                    return None
-                return datetime.strptime(valid.split()[1], '%Y-%m-%dT%H:%M:%S')
+                    from_date = datetime.min
+                else:
+                    from_date = datetime.strptime(valid.split()[1], '%Y-%m-%dT%H:%M:%S')
+                return from_date
         raise ValueError("Could not find 'Valid' in certificate info")
 
     @property
@@ -149,8 +151,11 @@ class SSHKey:
             if line.strip().startswith('Valid:'):
                 valid = line.split(':', 1)[1].strip()
                 if valid == 'forever':
-                    return None
-                return datetime.strptime(valid.split()[3], '%Y-%m-%dT%H:%M:%S')
+                    to_date = datetime.max
+                else:
+                    to_date = datetime.strptime(valid.split()[3], '%Y-%m-%dT%H:%M:%S')
+                return to_date
+
         raise ValueError("Could not find 'Valid' in certificate info")
 
     @property
@@ -184,7 +189,7 @@ class SSHKey:
         return self._certinfo
 
     def is_expired(self):
-        return self.valid_to is not None and self.valid_to < datetime.now()
+        return self.valid_to < datetime.now()
 
 
 class RevocationList:
@@ -237,17 +242,35 @@ class Archive:
                     archived_cert)
         shutil.copy(ssh_key.certificate, archived_cert)
 
-    def get_certs(self, cert_type, identity_pattern=None, serial_pattern=None):
+    def get_certs(self,
+                  cert_type,
+                  identity_pattern=None,
+                  serial_pattern=None,
+                  expiry_within=None,
+                  exclude_expired=None):
         if identity_pattern is None:
             identity_pattern = '*'
 
         if serial_pattern is None:
             serial_pattern = '*'
 
+        if exclude_expired is None:
+            exclude_expired = False
+
         identities = (self.path / Path(cert_type)).glob(identity_pattern)
         for identity in identities:
             for cert in identity.glob('%s-cert.pub' % serial_pattern):
-                yield SSHKey(certificate=cert)
+                ssh_key = SSHKey(certificate=cert)
+
+                if exclude_expired:
+                    if ssh_key.is_expired():
+                        continue
+
+                if expiry_within is not None:
+                    if ssh_key.is_expired() or ssh_key.valid_to > datetime.now() + timedelta(days=expiry_within):
+                        continue
+
+                yield ssh_key
 
 
 def generate_key(filename, key_type=None, bits=None):
@@ -269,31 +292,46 @@ def generate_key(filename, key_type=None, bits=None):
 def show_subcommand(args, config):
     archive_path = config.get('archive', ARCHIVE)
     archive = Archive(archive_path)
-    certs = archive.get_certs(args.certtype, args.identity, args.serial)
+    certs = archive.get_certs(args.certtype,
+                              args.identity,
+                              args.serial,
+                              args.expiry_within,
+                              args.exclude_expired)
 
-    if args.info:
-        for cert in certs:
+    revoked_keys = config.get('revoked_keys', REVOKED_KEYS)
+    rl = RevocationList(revoked_keys)
+    revoked_host_keys = config.get('revoked_host_keys', REVOKED_HOST_KEYS)
+    host_rl = RevocationList(revoked_host_keys)
+
+    for cert in certs:
+        validity = 'VALID'
+        if cert.is_expired():
+            validity = 'EXPIRED'
+
+        valid_to = cert.valid_to
+        if valid_to == datetime.max:
+            expiry = 'never'
+        else:
+            expiry = cert.valid_to
+
+        if cert.cert_type == 'host':
+            if host_rl.is_revoked(cert):
+                if args.exclude_revoked:
+                    continue
+                validity = '%s\t*** REVOKED ***' % validity
+        else:
+            if rl.is_revoked(cert):
+                if args.exclude_revoked:
+                    continue
+                validity = '%s\t*** REVOKED' % validity
+
+        if args.info:
             print(cert.certinfo())
-    else:
-        revoked_keys = config.get('revoked_keys', REVOKED_KEYS)
-        rl = RevocationList(revoked_keys)
-        revoked_host_keys = config.get('revoked_host_keys', REVOKED_HOST_KEYS)
-        host_rl = RevocationList(revoked_host_keys)
-
-        for cert in certs:
-            if cert.is_expired():
-                validity = 'EXPIRED'
-            else:
-                validity = 'VALID'
-
-            if cert.cert_type == 'host':
-                if host_rl.is_revoked(cert):
-                    validity = '%s,REVOKED' % validity
-            else:
-                if rl.is_revoked(cert):
-                    validity = '%s,REVOKED' % validity
-
-            print('%s [%s]' % (cert.certificate, validity))
+        else:
+            print('%s\t%s\t%s\t%s' % (cert.identity,
+                                      cert.serial,
+                                      expiry,
+                                      validity))
     return 0
 
 def revoke_subcommand(args, config):
@@ -409,6 +447,10 @@ def main():
                              choices=['user', 'host'])
     show_parser.add_argument('identity', help='glob match pattern')
     show_parser.add_argument('-s', '--serial', help='glob match pattern')
+    show_parser.add_argument('--expiry-within', metavar='DAYS', type=int,
+                             help='only list certificates expiring within a certain number of days')
+    show_parser.add_argument('--exclude-expired', action='store_true')
+    show_parser.add_argument('--exclude-revoked', action='store_true')
     show_parser.add_argument('-i', '--info', help='show certificate info',
                              action='store_true')
     show_parser.set_defaults(func=show_subcommand)
