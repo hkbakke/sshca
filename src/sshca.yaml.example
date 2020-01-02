@@ -53,10 +53,14 @@ profiles:
 
     options: []
     generate_key:
-      # Unless overridden the ssh-keygen defaults will be used for type and
-      # bits
+      # Unless overridden the ssh-keygen defaults will be used for type,
+      # bits, comment and password
       key_type: rsa
       bits: 4096
+      #comment: Some comment
+
+      # To not ask for password, use an empty string.
+      password: ''
 
       filename: /path/to/sshkey
 

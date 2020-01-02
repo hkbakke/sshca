@@ -1,3 +1,4 @@
 [MESSAGES CONTROL]
 disable=invalid-name,
-        missing-docstring
+        missing-docstring,
+        line-too-long

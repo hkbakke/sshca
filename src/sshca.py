@@ -290,7 +290,7 @@ class Archive:
                 yield ssh_key
 
 
-def generate_key(filename, key_type=None, bits=None):
+def generate_key(filename, key_type=None, bits=None, comment=None, password=None):
     cmd = ['ssh-keygen']
 
     if bits is not None:
@@ -298,6 +298,12 @@ def generate_key(filename, key_type=None, bits=None):
 
     if key_type is not None:
         cmd.extend(['-t', key_type])
+
+    if comment is not None:
+        cmd.extend(['-C', comment])
+
+    if password is not None:
+        cmd.extend(['-N', password])
 
     cmd.extend([
         '-f', filename,
@@ -311,10 +317,8 @@ def archive_subcommand(args, config):
     archive = Archive(archive_path)
 
     if args.purge_expired:
-        expired_host_certs = archive.get_certs(cert_type='host',
-                                               exclude_valid=True)
-        expired_user_certs = archive.get_certs(cert_type='user',
-                                               exclude_valid=True)
+        expired_host_certs = archive.get_certs(cert_type='host', exclude_valid=True)
+        expired_user_certs = archive.get_certs(cert_type='user', exclude_valid=True)
 
         for i in itertools.chain(expired_host_certs, expired_user_certs):
             LOGGER.warning("Purging expired certificate '%s' from archive", i.certificate)
@@ -377,10 +381,6 @@ def show_subcommand(args, config):
     return 0
 
 def revoke_subcommand(args, config):
-    if not args.certificate:
-        print('error: You must specify a public key file (-k/--public-key)')
-        return 2
-
     ssh_key = SSHKey(certificate=args.certificate)
 
     if ssh_key.cert_type == 'host':
@@ -394,7 +394,6 @@ def revoke_subcommand(args, config):
 
 def sign_subcommand(args, config):
     profile = config['profiles'][args.profile]
-    ca_key = profile.get('ca_key', config.get('ca_key', CA_KEY))
     validity = profile.get('validity')
     key_config = profile.get('generate_key')
     cert_type = profile.get('cert_type', 'user')
@@ -408,7 +407,7 @@ def sign_subcommand(args, config):
         ssh_key = SSHKey(private_key=private_key)
     else:
         if not args.public_key:
-            print('error: You must specify a public key (-k/--public-key)')
+            print('ERROR: You must specify a public key (-k/--public-key)')
             return 2
 
         ssh_key = SSHKey(public_key=args.public_key)
@@ -416,22 +415,22 @@ def sign_subcommand(args, config):
     LOGGER.debug('pre_expiry_renewal is set to %s', pre_expiry_renewal)
 
     if not args.force and pre_expiry_renewal and ssh_key.certificate.is_file():
-        LOGGER.info("Checking expiry information for existing certificate in '%s'",
-                    ssh_key.certificate)
+        LOGGER.info("Checking expiry information for existing certificate in '%s'", ssh_key.certificate)
         if ssh_key.is_expired():
             LOGGER.info('Existing certificate has expired. Continuing...')
         elif ssh_key.valid_to - datetime.now() > timedelta(days=pre_expiry_renewal):
-            LOGGER.info('There are more than %s days until the existing certificate expires. Skipping.',
-                        pre_expiry_renewal)
+            LOGGER.info('There are more than %s days until the existing certificate expires. Skipping.', pre_expiry_renewal)
             return 0
 
     with tempfile.TemporaryDirectory() as tmpdir:
         if key_config:
             key_name = Path(tmpdir) / ssh_key.private_key.name
             LOGGER.info("Generating a new key in '%s'...", key_name)
-            ssh_key_tmp = generate_key(key_name,
-                                       key_config.get('key_type'),
-                                       key_config.get('bits'))
+            ssh_key_tmp = generate_key(filename=key_name,
+                                       key_type=key_config.get('key_type'),
+                                       bits=key_config.get('bits'),
+                                       comment=key_config.get('comment'),
+                                       password=key_config.get('password'))
         else:
             ssh_key_tmp = SSHKey(Path(tmpdir) / ssh_key.public_key.name)
 
@@ -442,6 +441,7 @@ def sign_subcommand(args, config):
         if args.principals:
             principals.extend(args.principals.split(','))
 
+        ca_key = profile.get('ca_key', config.get('ca_key', CA_KEY))
         ca = SSHCA(ca_key)
         LOGGER.info("Signing '%s' using '%s'...", ssh_key.public_key, ca.ca_key)
         ssh_key_signed = ca.sign_key(ssh_key=ssh_key_tmp,
