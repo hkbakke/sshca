@@ -22,9 +22,11 @@ distribution with a configuration management tool.
 See [sshca.yaml.example](src/sshca.yaml.example)
 
 # Usage
-Create a CA key to use for signing if you don't have one from before
+Create a CA key to use for signing if you don't have one from before. Ensure
+you use a strong password for these.
 
-    ssh-keygen -t ed25519 -f /etc/sshca/ca
+    ssh-keygen -t ed25519 -f /etc/sshca/ca -C "SSH User CA"
+    ssh-keygen -t ed25519 -f /etc/sshca/host_ca -C "SSH Host CA"
 
 In general this is the signing command format. The public key is not needed if
 the profile has key generation configured.
