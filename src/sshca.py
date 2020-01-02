@@ -353,7 +353,7 @@ def sign_subcommand(args, config):
                                        key_config.get('key_type'),
                                        key_config.get('bits'))
         else:
-            ssh_key_tmp = SSHKey(Path(tmpdir) / ssh_key.private_key.name)
+            ssh_key_tmp = SSHKey(Path(tmpdir) / ssh_key.public_key.name)
 
             # This copy is only needed because ssh-keygen outputs the
             # certificate in the same directory as the public key.
