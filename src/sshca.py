@@ -7,6 +7,7 @@ import sys
 import shutil
 import subprocess
 import tempfile
+import itertools
 from string import Template
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -242,12 +243,21 @@ class Archive:
                     archived_cert)
         shutil.copy(ssh_key.certificate, archived_cert)
 
+    def disk_usage(self):
+        cmd = ['du', '-s', '--block-size=1', str(self.path)]
+        p = subprocess.run(cmd,
+                           capture_output=True,
+                           universal_newlines=True,
+                           check=True)
+        return int(p.stdout.split()[0])
+
     def get_certs(self,
                   cert_type,
                   identity_pattern=None,
                   serial_pattern=None,
                   expiry_within=None,
-                  exclude_expired=None):
+                  exclude_expired=None,
+                  exclude_valid=None):
         if identity_pattern is None:
             identity_pattern = '*'
 
@@ -257,6 +267,9 @@ class Archive:
         if exclude_expired is None:
             exclude_expired = False
 
+        if exclude_valid is None:
+            exclude_valid = False
+
         identities = (self.path / Path(cert_type)).glob(identity_pattern)
         for identity in identities:
             for cert in identity.glob('%s-cert.pub' % serial_pattern):
@@ -264,6 +277,10 @@ class Archive:
 
                 if exclude_expired:
                     if ssh_key.is_expired():
+                        continue
+
+                if exclude_valid:
+                    if not ssh_key.is_expired():
                         continue
 
                 if expiry_within is not None:
@@ -288,6 +305,31 @@ def generate_key(filename, key_type=None, bits=None):
     subprocess.run(cmd, check=True)
     ssh_key = SSHKey(private_key=filename)
     return ssh_key
+
+def archive_subcommand(args, config):
+    archive_path = config.get('archive', ARCHIVE)
+    archive = Archive(archive_path)
+
+    if args.purge_expired:
+        expired_host_certs = archive.get_certs(cert_type='host',
+                                               exclude_valid=True)
+        expired_user_certs = archive.get_certs(cert_type='user',
+                                               exclude_valid=True)
+
+        for i in itertools.chain(expired_host_certs, expired_user_certs):
+            LOGGER.warning("Purging expired certificate '%s' from archive", i.certificate)
+            i.certificate.unlink()
+    else:
+        host_certs = len(list(archive.get_certs(cert_type='host')))
+        user_certs = len(list(archive.get_certs(cert_type='user')))
+        size = archive.disk_usage()
+
+        print('Archive path: %s' % archive_path)
+        print('Archive size: %.2fM' % float(size / 1024 ** 2))
+        print('Number of host certificates: %d' % host_certs)
+        print('Number of user certificates: %d' % user_certs)
+
+    return 0
 
 def show_subcommand(args, config):
     archive_path = config.get('archive', ARCHIVE)
@@ -439,7 +481,7 @@ def main():
     sign_parser.add_argument('-f', '--force', action='store_true',
                              help='always renew certificate')
     sign_parser.set_defaults(func=sign_subcommand)
-    revoke_parser = subparsers.add_parser('revoke', help='revoke public key')
+    revoke_parser = subparsers.add_parser('revoke', help='revoke certificate')
     revoke_parser.add_argument('certificate', help='certificate file to revoke')
     revoke_parser.set_defaults(func=revoke_subcommand)
     show_parser = subparsers.add_parser('show', help='show signed certificates info')
@@ -454,6 +496,10 @@ def main():
     show_parser.add_argument('-i', '--info', help='show certificate info',
                              action='store_true')
     show_parser.set_defaults(func=show_subcommand)
+    archive_parser = subparsers.add_parser('archive', help='archive maintenance')
+    archive_parser.add_argument('--purge-expired', action='store_true',
+                                help='purge expired certificates')
+    archive_parser.set_defaults(func=archive_subcommand)
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
