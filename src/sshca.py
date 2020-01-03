@@ -374,7 +374,7 @@ def show_subcommand(args, config):
         if args.info:
             print(cert.certinfo())
         else:
-            print('{:<19}\t{:<19}\t{:<7}\t{}'.format(cert.serial,
+            print('{:>20}\t{:<19}\t{:<7}\t{}'.format(cert.serial,
                                                      str(expiry),
                                                      validity,
                                                      cert.identity))
