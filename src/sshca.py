@@ -364,20 +364,20 @@ def show_subcommand(args, config):
             if host_rl.is_revoked(cert):
                 if args.exclude_revoked:
                     continue
-                validity = '%s\t*** REVOKED ***' % validity
+                validity = 'REVOKED'
         else:
             if rl.is_revoked(cert):
                 if args.exclude_revoked:
                     continue
-                validity = '%s\t*** REVOKED' % validity
+                validity = 'REVOKED'
 
         if args.info:
             print(cert.certinfo())
         else:
-            print('%s\t%s\t%s\t%s' % (cert.identity,
-                                      cert.serial,
-                                      expiry,
-                                      validity))
+            print('{:<19}\t{:<19}\t{:<7}\t{}'.format(cert.serial,
+                                                     str(expiry),
+                                                     validity,
+                                                     cert.identity))
     return 0
 
 def revoke_subcommand(args, config):
